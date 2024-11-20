@@ -1,0 +1,11 @@
+case_study
+*.so
+venv
+.vscode
+libcapacity.so
+libfixed.so
+librnd_choice.so
+instances/*/*
+!instances/*/instances.toml
+!instances/*/model_configuration.toml
+

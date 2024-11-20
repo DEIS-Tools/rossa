@@ -1,0 +1,38 @@
+[plotting]
+packet_max = 1600
+latency_max = 40
+
+
+[[instance]]
+extension_name = "libfixed.so"
+folder_name = "fixed_quickest"
+reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "QUICKEST"
+
+[[instance]]
+extension_name = "librnd_choice.so"
+folder_name = "rnd_k2_quickest"
+reschedule = false
+[instance.envs]
+CHOICE_NUM_PATHS = 2
+CHOICE_APPROACH = "QUICKEST"
+
+[[instance]]
+extension_name = "libcapacity.so"
+folder_name = "capacity_k2_quickest_g50"
+reschedule = false
+[instance.envs]
+CAPACITY_NUM_PATHS = 2
+CAPACITY_APPROACH = "QUICKEST"
+CAPACITY_TRESHOLD = 0.50
+
+[[instance]]
+extension_name = "libcapacity.so"
+folder_name = "capacity_k2_quickest_g80"
+reschedule = false
+[instance.envs]
+CAPACITY_NUM_PATHS = 2
+CAPACITY_APPROACH = "QUICKEST"
+CAPACITY_TRESHOLD = 0.80
+

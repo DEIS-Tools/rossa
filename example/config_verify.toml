@@ -1,0 +1,42 @@
+[random]
+seed = 34141
+
+[model]
+num_nodes = 6
+num_switches = 2
+bandwidth = 250
+capacity = 600
+
+[flow]
+type = "gravity"  # "gravity", "uniform"
+num_flows = 8
+min_demand = 1
+max_demand = 300
+# Gravity
+# Replaces num_flows
+connection_percentage = 25
+#  send_mass(m1)^power * recv_mass(m2)^power 
+power = 2.0
+
+[topology]
+type = "rotating" # "rotating"
+interval = 2
+start_offset = 1
+
+[schedule]
+# type
+# - quickest: Quickest (wrt. time-cost) route possible.
+# - quickest_must_hop: The packets must be forward immediately. The considers quickests route.
+# - minimize_hops: Minimize the number of hops by waiting.
+# - two_hops: Exactly two hops.
+type = "quickest_must_hop"
+
+[query]
+sim_steps = 200  # Number of simulation steps for simulation queries.
+query_sim_packets_at_node = false
+query_sim_packets_at_port = false
+query_sim_max_sent = false
+query_verify_check_overflow = true
+query_sim_sampled_latency = false
+query_sim_port_utilization = false
+

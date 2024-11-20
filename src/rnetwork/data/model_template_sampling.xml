@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+  <declaration>
+    <<DECLARATIONS>>
+  </declaration>
+<template>
+		<name x="5" y="5">SwitchNetwork</name>
+		<declaration>clock t;</declaration>
+		<location id="id0" x="-969" y="-569">
+			<label kind="invariant" x="-986" y="-552">t &lt;= 1</label>
+		</location>
+		<location id="id1" x="-1198" y="-569">
+			<name x="-1215" y="-612">initialize</name>
+			<urgent/>
+		</location>
+		<init ref="id1"/>
+		<transition id="id2">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-1156" y="-595">verifyConstraints()</label>
+			<label kind="assignment" x="-1156" y="-569">setup()</label>
+		</transition>
+		<transition id="id3">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-1020" y="-722">t == 1</label>
+			<label kind="assignment" x="-1020" y="-748">simulatePhase()</label>
+			<nail x="-1054" y="-671"/>
+			<nail x="-884" y="-671"/>
+		</transition>
+	</template>
+  <system>// Place template instantiations here.
+Process = SwitchNetwork();
+// List one or more processes to be composed into a system.
+system Process;
+</system>
+  <queries>
+    <option key="--diagnostic" value="0"/>
+    <<GEN_QUERIES>>
+  </queries>
+</nta>
