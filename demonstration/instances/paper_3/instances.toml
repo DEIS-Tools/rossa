@@ -1,0 +1,18 @@
+[plotting]
+packet_max = 1600
+latency_max = 8
+
+[[instance]]
+extension_name = "libfixed.so"
+folder_name = "fixed_quickest"
+reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "QUICKEST"
+
+[[instance]]
+extension_name = "libfixed.so"
+folder_name = "fixed_fewest"
+reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "FEWEST_HOPS"
+

@@ -1,0 +1,41 @@
+[random]
+seed = 51672
+
+[model]
+num_nodes = 16
+num_switches = 4
+bandwidth = 1000 # 450
+capacity = 1500 # 1500
+
+[flow]
+type = "gravity"  # "gravity", "uniform"
+min_demand = 1
+max_demand = 300
+sampling_demand_variance_percent=20
+# uniform
+num_flows = 8
+# Gravity
+# Replaces num_flows
+connection_percentage = 25
+#  send_mass(m1)^power * recv_mass(m2)^power 
+power = 2.0
+
+[topology]
+type = "rotornet2024"
+
+[schedule]
+reschedule = false
+
+[query]
+sim_steps = 500  # Number of simulation steps for simulation queries.
+sampling_steps = 300 # Number of simulation steps for the packet sampling queries.
+sampling_count = 50 # Number of samples taken for the packet sampling queries.
+sampling_earliest = 30 # Earliest step number (init steps excluded) that sampled packets may be introduced.
+sampling_latest = 130 # Last step number (init steps excluded) that sampled packets may be introduced.
+query_sim_packets_at_node = true
+query_sim_packets_at_port = true
+query_sim_max_sent = false
+query_verify_check_overflow = false
+query_sim_sampled_latency = true
+query_sim_port_utilization = true
+

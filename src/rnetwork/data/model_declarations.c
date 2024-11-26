@@ -133,6 +133,7 @@ bool verifyScheduler() {
 
 bool verifyTopology() {
   // Check for direct self-loop
+  /* NO: Allow self-loop, since Rotornet2024 contains self-loops.
   for (i : phase_t) {
     for (p : port_t) {
       if (TOPOLOGY[i][p] == PORT_OWNER[p]) {
@@ -140,6 +141,7 @@ bool verifyTopology() {
       }
     }
   }
+  */
   // Check no self-flows
   for (f : flow_t) {
      if (FLOWS[f].ingress == FLOWS[f].egress) {

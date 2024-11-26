@@ -6,7 +6,7 @@ from random import Random
 
 import tomli
 from . import uppaal, plotting
-from .model import Flow, Model, RotatingSwitches
+from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches
 from plumbum import cli, colors, local
 
 # import plotting
@@ -118,6 +118,7 @@ _CONFIG_FLOW_BUILDERS = {"uniform": UniformFlowBuilder, "gravity": GravityFlowBu
 
 _CONFIG_TOPOLOGY_BUILDERS = {
     "rotating": RotatingSwitches,
+    "rotornet2024": Rotornet2024Switches,
 }
 
 

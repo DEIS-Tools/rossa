@@ -1,7 +1,7 @@
 from collections import namedtuple, defaultdict
 from typing import Any, Optional, Sequence, NamedTuple
 
-__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches"]
+__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches", "Rotornet2024Switches"]
 
 ScheduleChoice = namedtuple("ScheduleChoice", ["port", "phase"])
 Node = namedtuple("Node", ["index"])
@@ -179,4 +179,38 @@ class RotatingSwitches:
             topology.append(matching)
             offsets = tuple(advance_offset(x) for x in offsets)
 
+        return topology
+
+
+class Rotornet2024Switches:
+    def __init__(self, num_switches, **kwargs):
+        self.num_switches = num_switches
+        assert(num_switches == 4)
+
+    def get_topology(self, model: Model) -> Sequence[Sequence[int]]:
+        num_nodes = model.num_nodes
+        assert(num_nodes == 16)
+        
+        switch0 = [[1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14],
+                    [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12],
+                    [7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8],
+                    [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]]
+        switch1 = [[4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11],
+                    [6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9],
+                    [2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13],
+                    [10, 11, 8, 9, 14, 15, 12, 13, 2, 3, 0, 1, 6, 7, 4, 5]]
+        switch2 = [list(reversed(phase)) for phase in switch1]
+        switch3 = [list(reversed(phase)) for phase in switch0]
+        switches = [switch0, switch1, switch2, switch3] 
+        
+        topology = []
+        num_phases = 4
+        for phase in range(num_phases):
+            matching = [
+                # Select target for each port for each node.
+                switches[switch][phase][node]
+                for node in range(num_nodes)
+                for switch in range(self.num_switches)
+            ]
+            topology.append(matching)
         return topology

@@ -26,3 +26,7 @@ python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_1
 python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2
 python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_2
 
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3
+python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_3
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4
+python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_4
