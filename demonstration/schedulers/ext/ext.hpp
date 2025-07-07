@@ -8,6 +8,7 @@ using packet_t = int32_t;
 using phase_t = int32_t;
 using node_t = int32_t;
 using flow_t = int32_t;
+using switch_t = int32_t;
 using port_t = int32_t;
 
 struct ScheduleChoice {
@@ -33,7 +34,7 @@ struct Parameters {
 
     // Internal use.
     void resizeLimits() {
-        capacities.resize(num_ports);
+        capacities.resize(num_nodes);
         bandwidths.resize(num_ports);
     }
 };
@@ -79,17 +80,17 @@ struct Topology {
 struct Buffers {
 
     Buffers() = default;
-    Buffers(phase_t n_phases, port_t n_ports, flow_t n_flows) : phases_(n_phases), ports_(n_ports), flows_(n_flows) {
-        values_.resize(n_phases * n_ports * n_flows);
+    Buffers(node_t n_nodes, flow_t n_flows) : nodes_(n_nodes), flows_(n_flows) {
+        values_.resize(n_nodes * n_flows);
     }
 
     // Returns the number of packets buffered of a given flow for transmission
     // by some port in a given phase.
-    int32_t &operator()(phase_t phase, port_t port, flow_t flow) {
-        return values_[phase * ports_ * flows_ + port * flows_ + flow];
+    int32_t &operator()(node_t node, flow_t flow) {
+        return values_[node * flows_ + flow];
     };
 
-    void pushBuffers(phase_t phase, port_t port, packet_t *data);
+    void pushBuffers(node_t node, packet_t *data);
 
     void fill(packet_t value = 0) {
         std::fill(values_.begin(), values_.end(), value);
@@ -97,8 +98,7 @@ struct Buffers {
 
 private:
     std::vector<int32_t> values_;
-    int32_t phases_ = 0;
-    int32_t ports_ = 0;
+    int32_t nodes_ = 0;
     int32_t flows_ = 0;
 };
 
@@ -115,16 +115,16 @@ extern Network network;
 extern "C" {
 // Core interface
 void extBasicParams(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_ports);
-void extPortCapacities(int32_t *data);
-void extPortBandwidths(int32_t *data);
+void extNodeCapacities(const int32_t *data);
+void extPortBandwidths(const int32_t *data);
 void extPushPortOwners(node_t *owners);
 void extPushFlow(int32_t i, node_t ingress, node_t egress, int32_t amount);
 void extPushTopology(phase_t phase_i, node_t *targets);
-void extPushBuffers(int32_t phase, port_t port, node_t *data);
+void extPushBuffers(node_t node, packet_t *data);
 void extSetup(); // Called after model construction in UPPAAL. Calls customSetup()
 void extBegin(); // Called before each query. Calls customBegin()
 void extPrepareChoices();
-void extGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t &choice_phase, port_t &choice_port);
+void extGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight);
 
 // Utilities
 packet_t extGetPacketsInNetwork();
@@ -144,44 +144,26 @@ void customPrepareChoices();
 // Called (perhaps multiple times) each simulation step, and for all phase, node and flow combinations.
 // Must write to the output references choice_phase and choice_port.
 // REQUIREMENT: Between calls to customPrepareChoices this function must yield the same result for the same arguments
-void customGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t &choice_phase, port_t &choice_port);
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight);
 }
 #endif
 
 struct PortLoad {
 
-    static packet_t getPacketsForFlow(port_t port, phase_t phase, flow_t flow) {
-        return network.buffers(phase, port, flow);
+    static packet_t getPacketsForFlow(node_t node, flow_t flow) {
+        return network.buffers(node, flow);
     }
 
-    static packet_t getPackets(port_t port, phase_t phase) {
+    static packet_t getPackets(node_t node) {
         packet_t total = 0;
         for (flow_t f = 0; f < network.parameters.num_flows; ++f) {
-            total += network.buffers(phase, port, f);
+            total += network.buffers(node, f);
         }
         return total;
     }
 
-    // Returns the fraction of packets buffered at this port to be sent in the given
-    // phase compared to its capacity.
-    static double getLoad(port_t port, phase_t phase) {
-        return static_cast<double>(getPackets(port, phase)) / network.parameters.capacities[port];
-    }
-
-    static packet_t getTotalPackets(port_t port) {
-        packet_t total = 0;
-        for (phase_t phase = 0; phase < network.parameters.num_phases; ++phase) {
-            total += getPackets(port, phase);
-        }
-        return total;
-    }
-
-    // Returns the fraction of packets buffered at this port compared to its capacity.
-    static double getTotalPortLoad(port_t port) {
-        double total = 0;
-        for (phase_t phase = 0; phase < network.parameters.num_phases; ++phase) {
-            total += getLoad(port, phase);
-        }
-        return total;
+    // Returns the fraction of packets buffered at this node compared to its capacity.
+    static double getLoad(node_t node) {
+        return static_cast<double>(getPackets(node)) / network.parameters.capacities[node];
     }
 };

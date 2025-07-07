@@ -221,11 +221,15 @@ void constructSolutions() {
     }
 }
 
-void customGetScheduleChoice(int32_t phase_i, int32_t node, int32_t flow, int32_t &choice_phase, int32_t &choice_port) {
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    const node_t node = network.topology.owner(port);
     auto &flow_solution = (*pSolutions)[flow];
     auto choice = flow_solution.getChoice(phase_i, node);
-    choice_phase = choice.phase;
-    choice_port = choice.port;
+    if (phase_i == choice.phase && port == choice.port) {
+        choice_weight = 1;
+    } else {
+        choice_weight = 0;
+    }
 }
 
 void customPrepareChoices() {

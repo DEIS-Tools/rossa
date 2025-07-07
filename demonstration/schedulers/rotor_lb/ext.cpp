@@ -9,6 +9,8 @@
 #include <ranges>
 namespace views = std::views;
 
+#include <boost/container_hash/hash.hpp>
+
 /*
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
@@ -26,31 +28,48 @@ Params params{quickest};
 */
 
 struct ChoiceArgs {
-    int32_t phase;
-    int32_t node;
-    // int32_t destination;
-    int32_t flow;
+    int step;
+    node_t node;
+    flow_t flow;
+
+    [[nodiscard]] auto as_tuple() const -> decltype(auto) {
+        return std::tie(step, node, flow);
+    }
     bool operator==(const ChoiceArgs &other) const {
-        return phase == other.phase && node == other.node && flow == other.flow;
+        return as_tuple() == other.as_tuple();
     }
     bool operator!=(const ChoiceArgs &other) const {
         return !(*this == other);
     }
 };
+std::size_t hash_value(const ChoiceArgs& v) {
+    return boost::hash_value(v.as_tuple());
+}
+namespace std {
+    template<> struct hash<::ChoiceArgs> : boost::hash<::ChoiceArgs> {};
+}
 
-template <>
-struct std::hash<ChoiceArgs> {
-    std::size_t operator()(const ChoiceArgs &args) const noexcept {
-        return std::hash<int32_t>{}((args.phase << 24) + (args.node << 8) + args.flow);
-    }
+struct PortWeight {
+    PortWeight(port_t port, packet_t weight) : port(port), weight(weight) {}
+    explicit PortWeight(port_t port) : port(port), weight(1) {}
+    port_t port;
+    packet_t weight;
 };
+struct SchedulerChoice : std::vector<PortWeight> {
+    SchedulerChoice() = default;
+    SchedulerChoice(std::initializer_list<PortWeight> port_weights) : std::vector<PortWeight>{port_weights} {}
+    explicit SchedulerChoice(PortWeight port_weight) : std::vector<PortWeight>{port_weight} {}
+    explicit SchedulerChoice(port_t port) : std::vector<PortWeight>{PortWeight(port)} {}
+    explicit SchedulerChoice(port_t port, packet_t weight) : std::vector<PortWeight>{PortWeight(port, weight)} {}
+};
+
 
 std::mt19937 random_gen;
 // Random number chosen for this simulation step.
 uint32_t random_num;
 
 // std::unique_ptr<tg::TemporalGraph> tgGraph;
-std::unique_ptr<std::unordered_map<ChoiceArgs, ScheduleChoice>> pChoiceCache;
+std::unique_ptr<std::unordered_map<ChoiceArgs, SchedulerChoice>> pChoiceCache;
 
 
 // From: https://arxiv.org/abs/1504.06804
@@ -192,16 +211,16 @@ public:
         return offers;
     }
 
-    [[nodiscard]] port_t get_choice(flow_t flow) const {
+    [[nodiscard]] SchedulerChoice get_choice(flow_t flow) const {
         return get_choice(network.flows[flow].ingress, network.flows[flow].egress);
     }
-    [[nodiscard]] port_t get_choice(node_t source, node_t destination) const {
+    [[nodiscard]] SchedulerChoice get_choice(node_t source, node_t destination) const {
         for (const auto& [target, port] : targets()) {
             if (target == destination) { // Direct traffic
                 if (source != local_) {
-                    return port; // 1st priority: Non-local direct traffic
+                    return SchedulerChoice(port); // 1st priority: Non-local direct traffic
                 }
-                return port; // 2nd priority: Local direct traffic. TODO: if no more capacity, return -1;
+                return SchedulerChoice(port); // 2nd priority: Local direct traffic. TODO: if no more capacity, return -1;
             }
         }
         if (source == local_) {
@@ -211,8 +230,9 @@ public:
             }
         }
         // TODO: Simulation must allow not immediately scheduling for future ports, but wait and see which port is good to choose.
+        return {};
         // return -1; // Don't schedule yet.
-        return targets()[random_num%targets().size()].second;  // Random target for now...
+        // return targets()[random_num%targets().size()].second;  // Random target for now...
     }
 
 private:
@@ -222,7 +242,7 @@ private:
     std::vector<std::pair<node_t,port_t>> targets_;  // (node,port) \in targets: In current phase, we can send traffic to node through port.
 };
 
-void compute_rotor_lb(phase_t phase_i) {
+void compute_rotor_lb(phase_t phase_i, int step) {
     auto const& params = network.parameters;
 
     std::vector<RotorLbTable> tables;
@@ -235,42 +255,39 @@ void compute_rotor_lb(phase_t phase_i) {
             node_t target = network.topology(phase_i, owned_port);
             table.add_target(target, owned_port);
             for (const flow_t flow : views::iota(0, params.num_flows)) {
-                packet_t load = PortLoad::getPacketsForFlow(owned_port, phase_i, flow);
+                packet_t load = PortLoad::getPacketsForFlow(node, flow);
                 table(flow) = load;
             }
         }
         offers.emplace_back(table.get_offer());
     }
 
-
-
     for (const node_t node : views::iota(0, params.num_nodes)) {
         for (const flow_t flow : views::iota(0, params.num_flows)) {
-            // TODO: Make choice based on RotorLB algorithm
-            port_t choice = tables[node].get_choice(flow);
-            (*pChoiceCache)[{phase_i, node, flow}] = {choice, phase_i};
+            (*pChoiceCache)[{step, node, flow}] = tables[node].get_choice(flow);
         }
     }
 }
 
-static ScheduleChoice cachedChoice(const phase_t phase_i, const node_t node, const flow_t flow) {
-    auto key = ChoiceArgs{phase_i, node, flow};
+static packet_t cachedChoice(const port_t port, const flow_t flow, const phase_t phase_i, const int step) {
+    const node_t node = network.topology.owner(port);
+    auto key = ChoiceArgs{step, node, flow};
     auto iter = pChoiceCache->find(key);
     if (iter == pChoiceCache->end()) {
-        compute_rotor_lb(phase_i);
+        compute_rotor_lb(phase_i, step);
         iter = pChoiceCache->find(key);
     }
-    return iter->second;
+    auto& choice = iter->second;
+    auto port_choice = std::ranges::find(choice, port, [](const auto& pw){ return pw.port; });
+    return port_choice == choice.end() ? 0 : port_choice->weight;
 }
 
 // local data per destination
 // non-local data per source and destination
 // = table per node of traffic enqueued per (source,destination)-pair except diagonal and self-destination.
 
-void customGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t &choice_phase, port_t &choice_port) {
-    auto choice = cachedChoice(phase_i, node, flow);
-    choice_phase = choice.phase;
-    choice_port = choice.port;
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    choice_weight = cachedChoice(port, flow, phase_i, step);
 }
 
 void customPrepareChoices() {
@@ -280,7 +297,7 @@ void customPrepareChoices() {
 void customSetup() {
     // readEnvVars();
     // tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);
-    pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
+    pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, SchedulerChoice>>();
     // constructSolutions();
 }
 

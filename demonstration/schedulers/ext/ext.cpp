@@ -6,16 +6,16 @@
 
 Network network;
 
-void Buffers::pushBuffers(phase_t phase, port_t port, packet_t *data) {
-    const size_t start = phase * ports_ * flows_ + port * flows_;
-    std::copy(data, data + flows_, &values_[start]);
+void Buffers::pushBuffers(node_t node, packet_t *data) {
+    const size_t start = node * flows_;
+    std::copy_n(data, flows_, &values_[start]);
 }
 
 void extBasicParams(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_ports) {
     network.parameters = Parameters{num_phases, num_nodes, num_flows, num_ports};
     network.parameters.resizeLimits();
     network.flows.resize(num_flows);
-    network.buffers = Buffers(num_phases, num_ports, num_flows);
+    network.buffers = Buffers(num_nodes, num_flows);
 
     network.topology.num_phases = num_phases;
     network.topology.num_ports = num_ports;
@@ -36,17 +36,17 @@ void extPrepareChoices() {
     customPrepareChoices();
 }
 
-void extGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t &choice_phase, port_t &choice_port) {
-    customGetScheduleChoice(phase_i, node, flow, choice_phase, choice_port);
+void extGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    customGetScheduleChoice(port, flow, phase_i, step, choice_weight);
 }
 
-void extPortCapacities(packet_t *data) {
+void extNodeCapacities(const packet_t *data) {
     auto &p = network.parameters;
-    for (int32_t i = 0; i < p.num_ports; ++i) {
+    for (int32_t i = 0; i < p.num_nodes; ++i) {
         p.capacities[i] = data[i];
     }
 }
-void extPortBandwidths(packet_t *data) {
+void extPortBandwidths(const packet_t *data) {
     auto &p = network.parameters;
     for (int32_t i = 0; i < p.num_ports; ++i) {
         p.bandwidths[i] = data[i];
@@ -69,16 +69,14 @@ void extPushTopology(phase_t phase_i, node_t *targets) {
 int32_t extGetPacketsInNetwork() {
     int32_t sum = 0;
     const auto &params = network.parameters;
-    for (phase_t phase = 0; phase < params.num_phases; ++phase) {
-        for (port_t port = 0; port < params.num_ports; ++port) {
-            for (flow_t flow = 0; flow < params.num_flows; ++flow) {
-                sum += network.buffers(phase, port, flow);
-            }
+    for (node_t node = 0; node < params.num_nodes; ++node) {
+        for (flow_t flow = 0; flow < params.num_flows; ++flow) {
+            sum += network.buffers(node, flow);
         }
     }
     return sum;
 }
 
-void extPushBuffers(int32_t phase, port_t port, node_t *data) {
-    network.buffers.pushBuffers(phase, port, data);
+void extPushBuffers(node_t node, packet_t *data) {
+    network.buffers.pushBuffers(node, data);
 }

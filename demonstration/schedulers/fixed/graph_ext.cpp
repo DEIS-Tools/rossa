@@ -143,11 +143,14 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, int32_t f
     return iter->second;
 }
 
-void customGetScheduleChoice(int32_t phase_i, int32_t node, int32_t flow,
-    int32_t &choice_phase, int32_t &choice_port) {
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    const node_t node = network.topology.owner(port);
     auto choice = cachedChoice(phase_i, node, flow);
-    choice_phase = choice.phase;
-    choice_port = choice.port;
+    if (phase_i == choice.phase && port == choice.port) {
+        choice_weight = 1;
+    } else {
+        choice_weight = 0;
+    }
 }
 
 void customPrepareChoices() {}

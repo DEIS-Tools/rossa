@@ -106,7 +106,7 @@ struct FlowSolution {
         auto cpy = sol_.find({node, phase})->second;
         const auto treshold = params.alternativeTreshold;
         auto choice = std::find_if(cpy.begin(), cpy.end(), [treshold](const auto &pip) {
-            return PortLoad::getTotalPortLoad(pip.port) < treshold;
+            return PortLoad::getTotalPortLoad(pip.port) < treshold;     // TODO: In the new model, the notion of port load does not exists. The node has a single queue.
         });
         // If no-one matches take first solution.
         const auto &best = choice == cpy.end() ? cpy[0] : *choice;
@@ -216,11 +216,15 @@ void constructSolutions() {
     }
 }
 
-void customGetScheduleChoice(int32_t phase_i, int32_t node, int32_t flow, int32_t &choice_phase, int32_t &choice_port) {
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    const node_t node = network.topology.owner(port);
     const auto &flow_solution = (*pSolutions)[flow];
     auto choice = flow_solution.getChoice(phase_i, node);
-    choice_phase = choice.phase;
-    choice_port = choice.port;
+    if (phase_i == choice.phase && port == choice.port) {
+        choice_weight = 1;
+    } else {
+        choice_weight = 0;
+    }
 }
 
 void customPrepareChoices() {

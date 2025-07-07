@@ -140,18 +140,23 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
     return iter->second;
 }
 
-void customGetScheduleChoice(int32_t phase_i, int32_t node, int32_t flow, int32_t &choice_phase, int32_t &choice_port) {
+ScheduleChoice getScheduleChoice(int32_t phase_i, int32_t node, int32_t flow) {
     if (network.flows[flow].ingress == node) {
         // Random via point
         node_t random_via_node = hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_nodes);  // Choose random node based on phase_i and flow, and the random_num for this round.
-        auto choice = cachedChoice(phase_i, node, random_via_node);
-        choice_phase = choice.phase;
-        choice_port = choice.port;
+        return cachedChoice(phase_i, node, random_via_node);
     } else {
         // Quickest to egress
-        auto choice = cachedChoice(phase_i, node, network.flows[flow].egress);
-        choice_phase = choice.phase;
-        choice_port = choice.port;
+        return cachedChoice(phase_i, node, network.flows[flow].egress);
+    }
+}
+void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
+    const node_t node = network.topology.owner(port);
+    auto choice = getScheduleChoice(phase_i, node, flow);
+    if (phase_i == choice.phase && port == choice.port) {
+        choice_weight = 1;
+    } else {
+        choice_weight = 0;
     }
 }
 
