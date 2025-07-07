@@ -2,7 +2,7 @@
 rm -R schedulers/build/*
 
 # Clean copied to be path-findable from UPPAAL.
-rm libcapacity.so libfixed.so librnd_choice.so
+rm libcapacity.so libfixed.so librnd_choice.so libvaliant.so
 
 # Clean artefacts created by running
 ## Only keep instances.toml and model_configuration.toml files

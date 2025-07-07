@@ -16,6 +16,7 @@ BUILD_PATH=./schedulers/build
 cp $BUILD_PATH/fixed/libfixed.so .
 cp $BUILD_PATH/rnd_choice/librnd_choice.so .
 cp $BUILD_PATH/capacity/libcapacity.so .
+cp $BUILD_PATH/valiant/libvaliant.so .
 
 # Run demonstration
 

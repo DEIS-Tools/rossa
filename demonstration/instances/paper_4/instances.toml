@@ -36,3 +36,7 @@ CAPACITY_NUM_PATHS = 2
 CAPACITY_APPROACH = "QUICKEST"
 CAPACITY_TRESHOLD = 0.80
 
+[[instance]]
+extension_name = "libvaliant.so"
+folder_name = "valiant_quickest"
+reschedule = false
