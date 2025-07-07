@@ -102,11 +102,11 @@ struct hash<NodeInPhase> {
 }; // namespace std
 
 struct FlowSolution {
-    ScheduleChoice getChoice(phase_t phase, node_t node, const PortLoad &loads) const {
+    ScheduleChoice getChoice(phase_t phase, node_t node) const {
         auto cpy = sol_.find({node, phase})->second;
         const auto treshold = params.alternativeTreshold;
-        auto choice = std::find_if(cpy.begin(), cpy.end(), [treshold, &loads](const auto &pip) {
-            return loads.getTotalPortLoad(pip.port) < treshold;
+        auto choice = std::find_if(cpy.begin(), cpy.end(), [treshold](const auto &pip) {
+            return PortLoad::getTotalPortLoad(pip.port) < treshold;
         });
         // If no-one matches take first solution.
         const auto &best = choice == cpy.end() ? cpy[0] : *choice;
@@ -218,8 +218,7 @@ void constructSolutions() {
 
 void customGetScheduleChoice(int32_t phase_i, int32_t node, int32_t flow, int32_t &choice_phase, int32_t &choice_port) {
     const auto &flow_solution = (*pSolutions)[flow];
-    PortLoad loads;
-    auto choice = flow_solution.getChoice(phase_i, node, loads);
+    auto choice = flow_solution.getChoice(phase_i, node);
     choice_phase = choice.phase;
     choice_port = choice.port;
 }

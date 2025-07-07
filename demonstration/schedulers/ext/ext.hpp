@@ -149,7 +149,12 @@ void customGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t 
 #endif
 
 struct PortLoad {
-    packet_t getPackets(port_t port, phase_t phase) const {
+
+    static packet_t getPacketsForFlow(port_t port, phase_t phase, flow_t flow) {
+        return network.buffers(phase, port, flow);
+    }
+
+    static packet_t getPackets(port_t port, phase_t phase) {
         packet_t total = 0;
         for (flow_t f = 0; f < network.parameters.num_flows; ++f) {
             total += network.buffers(phase, port, f);
@@ -159,11 +164,11 @@ struct PortLoad {
 
     // Returns the fraction of packets buffered at this port to be sent in the given
     // phase compared to its capacity.
-    double getLoad(port_t port, phase_t phase) const {
+    static double getLoad(port_t port, phase_t phase) {
         return static_cast<double>(getPackets(port, phase)) / network.parameters.capacities[port];
     }
 
-    packet_t getTotalPackets(port_t port) const {
+    static packet_t getTotalPackets(port_t port) {
         packet_t total = 0;
         for (phase_t phase = 0; phase < network.parameters.num_phases; ++phase) {
             total += getPackets(port, phase);
@@ -172,7 +177,7 @@ struct PortLoad {
     }
 
     // Returns the fraction of packets buffered at this port compared to its capacity.
-    double getTotalPortLoad(port_t port) const {
+    static double getTotalPortLoad(port_t port) {
         double total = 0;
         for (phase_t phase = 0; phase < network.parameters.num_phases; ++phase) {
             total += getLoad(port, phase);
