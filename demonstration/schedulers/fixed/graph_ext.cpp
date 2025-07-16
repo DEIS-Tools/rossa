@@ -85,7 +85,7 @@ port_t findOwnedPort(const Topology &topology, node_t owner) {
 void computeToDestination(node_t destination) {
     using namespace boost;
 
-    auto destVertex = tgGraph->vNodes[destination];
+    auto destVertex = tgGraph->vNodes[tgGraph->nIndex(destination)];
     // We reverse the graph to find all solutions to this node.
     auto g = make_reverse_graph(tgGraph->graph);
 

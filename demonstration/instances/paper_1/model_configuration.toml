@@ -5,7 +5,7 @@ seed = 51672
 num_nodes = 11
 num_switches = 2
 bandwidth = 1000 # 450
-capacity = 1500 # 1500
+capacity = 3000 # 1500*2
 
 [flow]
 type = "gravity"  # "gravity", "uniform"

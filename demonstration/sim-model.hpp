@@ -75,6 +75,9 @@
     //rescheduling disabled in generation
     // reschedule(gCurrentPhase);
 #define ROSSA_DEMAND_INJECTION const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random(0.4) - 0.2)); const packet_t amount = (int)trunc(round(fAmount));
+// const packet_t amount = FLOWS[f].amount;
 
 
-#include "schedulers/ext/ext.hpp"
+#define ROSSA_SIM_STEPS 500
+#define ROSSA_SAMPLING_STEPS 300
+#define ROSSA_SAMPLING_COUNT 50

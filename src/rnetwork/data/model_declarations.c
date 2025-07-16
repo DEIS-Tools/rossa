@@ -23,7 +23,7 @@ typedef struct {
 
 const node_t PORT_OWNER[port_t] = <<GEN_PORT_OWNER>>;
 
-const packet_t PORT_CAPACITIES[port_t] = <<GEN_PORT_CAPACITIES>>;
+const packet_t NODE_CAPACITIES[node_t] = <<GEN_NODE_CAPACITIES>>;
 
 const packet_t PORT_BANDWIDTHS[port_t] = <<GEN_PORT_BANDWIDTHS>>;
 
@@ -51,7 +51,7 @@ int sampleLatency[flow_t];  // The result latency.
 /*** EXT INTERFACE ***/
 import "./<<EXT_NAME>>" {
   void extBasicParams(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_ports);
-  void extPortCapacities(packet_t& capacities[NUM_PORTS]);
+  void extNodeCapacities(packet_t& capacities[NUM_NODES]);
   void extPortBandwidths(packet_t& bandwidths[NUM_PORTS]);
   void extPushPortOwners(node_t& owners[NUM_PORTS]);
   void extPushBuffers(phase_t phase, port_t port, packet_t& data[NUM_FLOWS]);
@@ -73,13 +73,14 @@ void pushBuffers() {
 }
 
 void __ON_CONSTRUCT__() {
+  packet_t nodeData[node_t];
   packet_t portData[port_t];
   node_t topoData[port_t];
   int32_t i = 0;
   // Copy Model Parameters
   extBasicParams(NUM_PHASES, NUM_NODES, NUM_FLOWS, NUM_PORTS);  
-  portData = PORT_CAPACITIES;
-  extPortCapacities(portData);
+  nodeData = NODE_CAPACITIES;
+  extNodeCapacities(nodeData);
   portData = PORT_BANDWIDTHS;
   extPortBandwidths(portData);
   topoData = PORT_OWNER;
@@ -220,13 +221,13 @@ void nextPhase() {
   }
 }
 
-bool validPortState(port_t p) {
-   return (sum(i : phase_t) portBuffered(i, p)) <= PORT_CAPACITIES[p];
+bool validNodeState(node_t n) {
+    return packetsAtNode(n) <= NODE_CAPACITIES[n];
 }
 
 bool updateValidState() {
-  for (p : port_t) {
-    if (!validPortState(p)) {
+  for (n : node_t) {
+    if (!validNodeState(n)) {
       gDidOverflow = true;
       return false;
     }

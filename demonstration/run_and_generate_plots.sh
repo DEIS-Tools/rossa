@@ -23,12 +23,12 @@ cp $BUILD_PATH/valiant/libvaliant.so .
 
 DEMONSTRATION_FOLDER=./instances
 
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_1
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_1 --fast
 python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_1
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2 --fast
 python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_2
 
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3 --fast
 python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_3
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4
+python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4 --fast
 python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_4

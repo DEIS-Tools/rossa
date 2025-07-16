@@ -9,3 +9,5 @@ instances/*/*
 !instances/*/instances.toml
 !instances/*/model_configuration.toml
 
+cmake-build-*/
+build/

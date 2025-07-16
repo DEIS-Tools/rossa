@@ -161,6 +161,12 @@ struct PortLoad {
         }
         return total;
     }
+    static packet_t getTotalPortLoad(port_t port) {
+        // FIXME: In the new model, the notion of port load does not exists. The node has a single queue.
+        //        For now we pretend node load is uniformly distributed across the "ports", so the capacity-based schedulers can still compile.
+        auto num_switches = network.parameters.num_ports / network.parameters.num_nodes;
+        return getLoad(network.topology.owner(port)) / num_switches;
+    }
 
     // Returns the fraction of packets buffered at this node compared to its capacity.
     static double getLoad(node_t node) {

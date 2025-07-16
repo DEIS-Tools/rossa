@@ -1,11 +1,14 @@
 from itertools import permutations
 import sys
+import os
 import json
 import time
 from random import Random
+import subprocess
+import tempfile
 
 import tomli
-from . import uppaal, plotting
+from . import uppaal, plotting, cppsim
 from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches
 from plumbum import cli, colors, local
 
@@ -36,9 +39,9 @@ class BadConfigException(Exception):
 def build_flowless_model(num_nodes, bandwidth, capacity, ports_per_node, **kwargs):
     model = Model()
     for _ in range(num_nodes):
-        node = model.add_node()
+        node = model.add_node(capacity)
         for _ in range(ports_per_node):
-            model.add_port(node, capacity, bandwidth)
+            model.add_port(node, bandwidth)
     return model
 
 
@@ -201,6 +204,10 @@ class RotorSwitchApp(cli.Application):
 class RotorGenerate(cli.Application, OutputMixin):
 
     verbose = cli.Flag(["-v", "--verbose"], default=False, help="Enable verbose output")
+    
+    no_uppaal = cli.Flag("--fast", default = False, help="Simulate directly in C++ (skipping UPPAAL)")
+
+    src_dir = cli.SwitchAttr(["-s", "--src_dir"], cli.ExistingDirectory)
 
     model_type = cli.SwitchAttr(["--model-type"], cli.Set("base", "sampling"), default="base")
 
@@ -280,7 +287,24 @@ class RotorGenerate(cli.Application, OutputMixin):
         timings.stop("building_model")
         self.diagnostics("Model built")
 
-        if self.export_declarations:
+        if self.no_uppaal:
+            file_content = cppsim.write_model_declarations(
+                model, model_type=self.model_type, config=self.config
+            )
+            output_file = local.path(self.output_file)
+            output_file.dirname.mkdir()
+            if not self.src_dir:
+                self.src_dir = output_file.dirname
+            sim_model_path = output_file.dirname / 'sim-model.h'
+            with open(sim_model_path, "w") as f:
+                f.write(file_content)
+            build_dir = tempfile.mkdtemp(dir = output_file.dirname)
+            scheduler_lib_path = self.src_dir / self.extension_library_name
+            subprocess.run(f"cmake -S . -B {build_dir} && cmake --build {build_dir} --target sim && mv {build_dir}/sim {output_file} && rm -r {build_dir}", 
+                           env=dict(os.environ, scheduler_lib_path=scheduler_lib_path, sim_model_path=sim_model_path), 
+                           cwd=self.src_dir, shell=True)
+
+        elif self.export_declarations:
             self.diagnostics("Exporting definitions")
             model_definitions = uppaal.write_model_declarations(
                 model, self.model_type, config=self.config, ext_name=self.extension_library_name
@@ -323,17 +347,17 @@ class RotorGenerate(cli.Application, OutputMixin):
 class RotorRun(cli.Application, OutputMixin):
 
     verbose = cli.Flag(["-v", "--verbose"], default=False, help="Enable verbose output")
-
+    no_uppaal = cli.Flag("--fast", default = False, help="Simulate directly in C++ (skipping UPPAAL)")
     uppaal_key = cli.SwitchAttr(
         "--uppaal-key",
         str,
         envname="UPPAAL_KEY",
         help="The GUID license key id for UPPAAL (verifyta). Can also be set via environment variable UPPAAL_KEY",
-        mandatory=True,
+        # mandatory=True,
     )
 
     model_file = cli.SwitchAttr(["-i", "--model-file"], cli.ExistingFile, mandatory=True)
-    output_dir = cli.SwitchAttr(["-o", "--output-dir"])
+    output_dir = cli.SwitchAttr(["-o", "--output-dir"], cli.ExistingDirectory)
     log_name = cli.SwitchAttr(["--logfile-name"], str, default="verifyta.log")
     segments_name = cli.SwitchAttr(["--segments-name"], str, default="segments.json")
 
@@ -348,12 +372,19 @@ class RotorRun(cli.Application, OutputMixin):
         path_segments = self.output_dir / self.segments_name
         timings_path = self.output_dir / "timings.json"
 
-        self.diagnostics("Running UPPAAL")
-        timings.start("verifyta")
-        exit_code, sout, serr = self._run_verifyta(self.model_file)
-        timings.stop("verifyta")
-
-        self.diagnostics("Running UPPAAL complete")
+        if self.no_uppaal:
+            self.diagnostics("Running simulation")
+            timings.start("simulation")
+            exit_code, sout, serr = self._run_cpp(self.model_file)
+            timings.stop("simulation")
+            self.diagnostics("Running simulation complete")
+        else:
+            self.diagnostics("Running UPPAAL")
+            timings.start("verifyta")
+            exit_code, sout, serr = self._run_verifyta(self.model_file)
+            timings.stop("verifyta")
+            self.diagnostics("Running UPPAAL complete")
+        
         with open(timings_path, "w") as f:
             json.dump(timings.asdict(), f)
 
@@ -361,7 +392,11 @@ class RotorRun(cli.Application, OutputMixin):
             self.output(colors.warn | "There were errors", is_error=True)
             self.output(serr, is_error=True)
             return
-        segments = [s for s in uppaal.parse_uppaal_output(sout) if s.formula_expr is not None]
+
+        if self.no_uppaal:
+            segments = cppsim.parse_sim_output(sout)
+        else:
+            segments = [s for s in uppaal.parse_uppaal_output(sout) if s.formula_expr is not None]
 
         with open(path_log, "w") as f:
             f.write(sout)
@@ -371,6 +406,11 @@ class RotorRun(cli.Application, OutputMixin):
             for segment in segments:
                 json_obj.append(segment._asdict())
             json.dump(json_obj, f)
+        
+
+    def _run_cpp(self, model_path):
+        result = subprocess.run(model_path, capture_output=True, shell=True, text=True, cwd=model_path.dirname)
+        return result.returncode, result.stdout, result.stderr
 
     def _run_verifyta(self, model_path):
         if not self.uppaal_key:

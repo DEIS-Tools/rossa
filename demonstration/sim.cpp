@@ -1,10 +1,19 @@
 #include <cassert>
-#include "sim-model4.hpp"
-#include <ranges>
-namespace views = std::views;
 #include <cmath>
 #include <random>
 #include <iostream>
+#include <ranges>
+#include <boost/type_traits/declval.hpp>
+namespace views = std::views;
+#include "schedulers/ext/ext.hpp"
+
+#ifdef SIM_MODEL_PATH
+    #define STRINGIFY(X) STRINGIFY2(X)
+    #define STRINGIFY2(X) #X
+    #include STRINGIFY(SIM_MODEL_PATH)
+#else
+    #include "sim-model.hpp"
+#endif
 
 #define meta 
 
@@ -49,6 +58,16 @@ const node_t TOPOLOGY[NUM_PHASES][NUM_PORTS] = ROSSA_GEN_TOPOLOGY;
 
 const Flow FLOWS[NUM_FLOWS] = ROSSA_GEN_FLOWS;
 
+/*** Convenience functions/macros ***/
+#define loop(num, i, ...) for (const auto i : views::iota(0, num)) { __VA_ARGS__ }
+#define for_phases(i, ...) loop(NUM_PHASES, i, __VA_ARGS__)
+#define for_nodes(i, ...) loop(NUM_NODES, i, __VA_ARGS__)
+#define for_flows(i, ...) loop(NUM_FLOWS, i, __VA_ARGS__)
+#define for_switches(i, ...) loop(NUM_SWITCHES, i, __VA_ARGS__)
+#define for_ports(i, ...) loop(NUM_PORTS, i, __VA_ARGS__)
+
+constexpr port_t port_of(node_t node, switch_t sw) { return node * NUM_SWITCHES + sw; }
+constexpr node_t port_owner(port_t port) { return port / NUM_SWITCHES; }
 /*** STATE ***/
 
 bool gDidOverflow = false; // Whether any port at any time overflowed
@@ -61,81 +80,86 @@ meta packet_t maxSendFromPortInPhase = 0;
 // Sampling
 int sampleIntroIndex[NUM_FLOWS]; // The sampled packets place in queue outside network (num packets before it)
 int sampleEntryStep[NUM_FLOWS];
-int32_t samplePortPhasePosition[NUM_FLOWS]; // The position of the packet in the flow (num packets before it)
+int32_t sampleNodePosition[NUM_FLOWS]; // The position of the packet in the flow (num packets before it)
 node_t sampleNode[NUM_FLOWS]; // The node it is in.
 // port_t samplePort[NUM_FLOWS]; // The port it is in.
 // phase_t samplePhase[NUM_FLOWS]; // phase it is to be sent in.
 int sampleLatency[NUM_FLOWS]; // The result latency.
 
-constexpr port_t port_of(node_t node, switch_t sw) { return node * NUM_SWITCHES + sw; }
-constexpr node_t port_owner(port_t port) { return port / NUM_SWITCHES; }
 
 void pushBuffers() {
-    for (const auto node : views::iota(0, NUM_NODES)) {
-        extPushBuffers(node, gNodeBuffers[node]);
-    }
+    for_nodes(node, extPushBuffers(node, gNodeBuffers[node]);)
 }
 
 void ON_CONSTRUCT() {
     packet_t nodeData[NUM_NODES] = ROSSA_GEN_NODE_CAPACITIES;
     packet_t portData[NUM_PORTS] = ROSSA_GEN_PORT_BANDWIDTHS;
     node_t topoData[NUM_PORTS];
-    int32_t i = 0;
     // Copy Model Parameters
     extBasicParams(NUM_PHASES, NUM_NODES, NUM_FLOWS, NUM_PORTS);
 
     // portData = PORT_CAPACITIES;
-    for (const auto node : views::iota(0, NUM_NODES)) { nodeData[node] = NODE_CAPACITIES[node]; }
+    for_nodes(node, nodeData[node] = NODE_CAPACITIES[node];)
     extNodeCapacities(nodeData);
 
     // portData = PORT_BANDWIDTHS;
-    for (const auto port : views::iota(0, NUM_PORTS)) { portData[port] = PORT_BANDWIDTHS[port]; }
+    for_ports(port, portData[port] = PORT_BANDWIDTHS[port];)
     extPortBandwidths(portData);
 
     // topoData = PORT_OWNER;
-    for (const auto port : views::iota(0, NUM_PORTS)) { topoData[port] = port_owner(port); }
+    for_ports(port, topoData[port] = port_owner(port);)
     extPushPortOwners(topoData);
 
     // Copy Flows
-    for (i = 0; i < NUM_FLOWS; ++i) {
-        extPushFlow(i, FLOWS[i].ingress, FLOWS[i].egress, FLOWS[i].amount);
-    }
+    for_flows(flow, extPushFlow(flow, FLOWS[flow].ingress, FLOWS[flow].egress, FLOWS[flow].amount);)
     // Copy Topology
-    for (i = 0; i < NUM_PHASES; ++i) {
-        // topoData = TOPOLOGY[i];
-        for (const auto port : views::iota(0, NUM_PORTS)) { topoData[port] = TOPOLOGY[i][port]; }
-        extPushTopology(i, topoData);
-    }
+    for_phases(phase,
+        // topoData = TOPOLOGY[phase];
+        for_ports(port,
+            topoData[port] = TOPOLOGY[phase][port];
+        )
+        extPushTopology(phase, topoData);
+    )
     extSetup();
 }
 
 void ON_BEGIN() {
+    gDidOverflow = false;
+    gCurrentPhase = 0;
+    gCurrentStep = 0;
+    for_nodes(node, for_flows(flow, gNodeBuffers[node][flow] = 0;))
+    for_ports(port, gPortSent[port] = 0;)
+    maxSendFromPortInPhase = 0;
+
     extBegin();
     // technically not necessary here, but the principle,
     // because is otherwise only updated at the end of steps.
     pushBuffers();
 }
 
+void get_normalised_schedule(node_t node, flow_t flow, phase_t phase_i, double norm_schedule[NUM_SWITCHES]) {
+    packet_t buffered = gNodeBuffers[node][flow];
+    packet_t weights[NUM_SWITCHES];
+    packet_t sum = 0;
+    for (const auto sw : views::iota(0, NUM_SWITCHES)) {
+        packet_t choice_weight;
+        extGetScheduleChoice(port_of(node,sw), flow, phase_i, gCurrentStep, choice_weight);  // The current step represents the uniqueness of the state: for each new step, the scheduler needs to reconsider the state.
+        weights[sw] = choice_weight;
+        sum += choice_weight;
+    }
+    for (const auto sw : views::iota(0, NUM_SWITCHES)) {
+        norm_schedule[sw] = sum == 0 ? 0 : buffered * (weights[sw] / static_cast<double>(sum));
+    }
+}
 
 /*** CONSTRAINTS ***/
 
 bool verifyScheduler() {
     // Ensure getChoice is ready.
-    extPrepareChoices();
+    // extPrepareChoices();
 
     // ingress traffic must always be routed to a valid owned port!
-    for (const auto f : views::iota(0, NUM_FLOWS)) {
-        for (const auto i : views::iota(0, NUM_PHASES)) {
-            // Check all nodes make valid choices.
-            for (const auto n : views::iota(0, NUM_NODES)) {
-                /*const ScheduleChoice choice = getChoice(i, n, f);
-                const node_t bufferOwner = port_owner(choice.port);
-                if (bufferOwner != n) {
-                    return false;
-                }*/
-            }
-        }
-    }
+    // Note: This is trivially satisfied for the new model!
     return true;
 }
 
@@ -172,7 +196,7 @@ void setup() {
     for (const auto f : views::iota(0, NUM_FLOWS)) {
         sampleLatency[f] = -1;
         sampleEntryStep[f] = -1;
-        samplePortPhasePosition[f] = -1;
+        sampleNodePosition[f] = -1;
         sampleIntroIndex[f] = static_cast<int>(trunc(FLOWS[f].amount * fStepsToStable + random(70.0)));
     }
 }
@@ -199,12 +223,12 @@ void sampleIngressAdded(flow_t f, packet_t amount) {
         sampleIntroIndex[f] = sampleIntroIndex[f] - amount;
         if (sampleIntroIndex[f] < 0) {
             // Enter the network.
-            node_t n = FLOWS[f].ingress;
+            const node_t n = FLOWS[f].ingress;
             // We already just did this as part of normal scheduling:
-            //    PortBuffers[n][f] += amount;
+            //    gNodeBuffers[n][f] += amount;
             // So add our now non-positive ingress position to the amount stored.
-            // E.g. if index is now -1 then we were the were last to make it. -6 we are the 6th last etc.
-            samplePortPhasePosition[f] = gNodeBuffers[n][f] + sampleIntroIndex[f];
+            // E.g. if index is now -1 then we were the last to make it. -6 we are the 6th last etc.
+            sampleNodePosition[f] = gNodeBuffers[n][f] + sampleIntroIndex[f];
             sampleEntryStep[f] = gCurrentStep;
             sampleNode[f] = n;
 
@@ -214,33 +238,29 @@ void sampleIngressAdded(flow_t f, packet_t amount) {
         }
     }
 }
-/*
-void samplePortTransfer(phase_t i, flow_t f, port_t pSender, node_t destNode, packet_t amount) {
-    if (pSender != samplePort[f]) return; // The sampled packet is not here.
-    if (i != samplePhase[f]) return; // It is not sent in this phase.
-    if (sampleLatency[f] == -1 && samplePortPhasePosition[f] >= 0) {
+
+void samplePortTransfer(flow_t f, node_t destNode, packet_t amountSendNode, packet_t amountDestNode) {
+    if (sampleLatency[f] == -1 && sampleNodePosition[f] >= 0) {
         // We have not sampled the final latency value yet and have been injected.
-        samplePortPhasePosition[f] -= amount;
-        if (samplePortPhasePosition[f] < 0) {
+        sampleNodePosition[f] -= amountSendNode;
+        if (sampleNodePosition[f] < 0) {
             // The packet leaves the port.
             if (destNode == FLOWS[f].egress) {
                 // Packet leaves network
                 sampleLatency[f] = gCurrentStep - sampleEntryStep[f];
-                samplePortPhasePosition[f] = -1;
+                sampleNodePosition[f] = -1;
             } else {
                 // Goes to another port
-                const ScheduleChoice choice = getChoice(i, destNode, f);
-                // We already did: recv[choice.phase][choice.port][f] += sent[i][pSender][f];
+                // Proportionally re-calculate position among packets arriving at destination (from back with negative position).
+                sampleNodePosition[f] *= static_cast<double>(amountDestNode) / static_cast<double>(amountSendNode);
                 // Our new position is how much is there now "plus our negative position" since we subtracted above.
                 // 0-index. If 10 packets was added, and were -10 then we are the first, if -9 we are the last.
-                samplePortPhasePosition[f] = gPortBuffers[choice.phase][choice.port][f] + samplePortPhasePosition[f];
-                samplePort[f] = choice.port;
-                samplePhase[f] = choice.phase;
+                sampleNodePosition[f] += gNodeBuffers[destNode][f];
             }
         }
     }
 }
-*/
+
 
 /** NORMAL UPDATE **/
 
@@ -296,8 +316,8 @@ void reschedule(phase_t phase) {
         if (sampleChangingPlace && sampleLatency[f] == -1 && sampleEntryStep[f] != -1) {
             // It's new place in the queue is its current place + how much is already in the new destination port/phase-combination.
             // TODO: Recheck this line. Consider what was before.
-            samplePortPhasePosition[f] = gPortBuffers[sampleChoice.phase][sampleChoice.port][f] +
-                samplePortPhasePosition[f];
+            sampleNodePosition[f] = gPortBuffers[sampleChoice.phase][sampleChoice.port][f] +
+                sampleNodePosition[f];
             samplePort[f] = sampleChoice.port;
             samplePhase[f] = sampleChoice.phase;
         }
@@ -326,24 +346,9 @@ bool updateValidState() {
     return true;
 }
 
-void get_normalised_schedule(node_t node, flow_t flow, phase_t phase_i, double norm_schedule[NUM_SWITCHES]) {
-    packet_t buffered = gNodeBuffers[node][flow];
-    packet_t weights[NUM_SWITCHES];
-    packet_t sum = 0;
-    for (const auto sw : views::iota(0, NUM_SWITCHES)) {
-        packet_t choice_weight;
-        extGetScheduleChoice(port_of(node,sw), flow, phase_i, gCurrentStep, choice_weight);  // The current step represents the uniqueness of the state: for each new step, the scheduler needs to reconsider the state.
-        weights[sw] = choice_weight;
-        sum += choice_weight;
-    }
-    for (const auto sw : views::iota(0, NUM_SWITCHES)) {
-        norm_schedule[sw] = sum == 0 ? 0 : buffered * (weights[sw] / static_cast<double>(sum));
-    }
-}
-
 void simulatePhase() {
     // The current sending phase.
-    const phase_t i = gCurrentPhase;
+    const phase_t phase = gCurrentPhase;
     packet_t sentPort[NUM_PORTS][NUM_FLOWS]{};
     packet_t recv[NUM_NODES][NUM_FLOWS]{};
     packet_t sentNode[NUM_NODES][NUM_FLOWS]{};
@@ -353,8 +358,11 @@ void simulatePhase() {
     // Calculate sent (only relevant for current phase 'i')
     for (const auto node : views::iota(0, NUM_NODES)) {
         double schedule[NUM_FLOWS][NUM_SWITCHES]{};
+        if (node == 5) {
+            assert(true);
+        }
         for (const auto flow : views::iota(0, NUM_FLOWS)) {
-            get_normalised_schedule(node, flow, i, schedule[flow]);
+            get_normalised_schedule(node, flow, phase, schedule[flow]);
         }
         for (const auto sw : views::iota(0, NUM_SWITCHES)) {
             port_t p = port_of(node, sw);
@@ -381,7 +389,7 @@ void simulatePhase() {
     // Calculate received
     for (const auto f : views::iota(0, NUM_FLOWS)) { // For all flows
         for (const auto pSender : views::iota(0, NUM_PORTS)) { // For any possible port sender
-            const node_t destNode = TOPOLOGY[i][pSender]; // Which node is the receiver
+            const node_t destNode = TOPOLOGY[phase][pSender]; // Which node is the receiver
             if (destNode != FLOWS[f].egress) { // Egress means packets leave.
                 //Add the sent packages to the receiving node.
                 recv[destNode][f] += sentPort[pSender][f];
@@ -397,8 +405,22 @@ void simulatePhase() {
     }
 
     // Must be here after buffers are modified, but before new ingress.
-    for (const auto f : views::iota(0, NUM_FLOWS)) {
-        // samplePortTransfer(i, f, samplePort[f], TOPOLOGY[i][samplePort[f]], sent[i][samplePort[f]][f]);
+    for (const auto flow : views::iota(0, NUM_FLOWS)) {
+        node_t node = sampleNode[flow];
+        if (sentNode[node][flow] == 0) continue;  // Nothing sent on this flow.
+        // Weighted sampling (if flow is split here).
+        double sampledWeight = random(sentNode[node][flow]);
+        packet_t sum = 0;
+        port_t sampledPort = -1;
+        for (const auto sw : views::iota(0, NUM_SWITCHES)) {
+            port_t port = port_of(node, sw);
+            const auto w = sentPort[port][flow];
+            if (sampledWeight >= sum && sampledWeight < sum + w) sampledPort = port;
+            sum += w;
+        }
+        assert(sampledPort >= 0);
+        node_t destNode = TOPOLOGY[phase][sampledPort];
+        samplePortTransfer(flow, destNode, sentNode[node][flow], recv[destNode][flow]);
     }
 
     ROSSA_GEN_SCHEDULE_TOGGLE
@@ -415,7 +437,7 @@ void simulatePhase() {
     pushBuffers();
 }
 
-void output_header() {
+void print_node_and_port_header() {
     std::cout << "step; gDidOverflow; ";
     for (const auto node : views::iota(0, NUM_NODES)) {
         std::cout << "packetsAtNode(" << node << "); ";
@@ -426,8 +448,8 @@ void output_header() {
     std::cout << "\n";
 }
 
-void output(phase_t phase) {
-    std::cout << phase << "; " << std::boolalpha << gDidOverflow << "; ";
+void print_node_and_port(int step) {
+    std::cout << step << "; " << std::boolalpha << gDidOverflow << "; ";
     for (const auto node : views::iota(0, NUM_NODES)) {
         std::cout << packetsAtNode(node) << "; ";
     }
@@ -437,18 +459,46 @@ void output(phase_t phase) {
     std::cout << "\n";
 }
 
-int main() {
-    ON_CONSTRUCT();
+void print_sampling_header() {
+    std::cout << "sample_id; ";
+    for (const auto flow : views::iota(0, NUM_FLOWS)) {
+        std::cout << "sampleLatency[" << flow << "]; ";
+    }
+    std::cout << "\n";
+}
+
+void print_sampling_line(int sample_id) {
+    std::cout << sample_id << "; ";
+    for (const auto flow : views::iota(0, NUM_FLOWS)) {
+        std::cout << sampleLatency[flow] << "; ";
+    }
+    std::cout << "\n";
+}
+
+template<typename OutFn>
+void run_one_simulation(int steps, OutFn&& output) {
     ON_BEGIN();
     assert(verifyConstraints());
     setup();
     int t = 0;
-    output_header();
     output(t);
-    int target = 500;
-    while (t <= target) {
+    while (t < steps) {
         t++;
         simulatePhase();
         output(t);
+    }
+}
+
+int main() {
+    ON_CONSTRUCT();
+    print_node_and_port_header();
+    run_one_simulation(ROSSA_SIM_STEPS, print_node_and_port);
+
+    std::cout << "@@@\n";  // Print seperator
+
+    print_sampling_header();
+    for (int sample_id = 0; sample_id < ROSSA_SAMPLING_COUNT; ++sample_id) {
+        run_one_simulation(ROSSA_SAMPLING_STEPS, [](int step){});
+        print_sampling_line(sample_id);
     }
 }

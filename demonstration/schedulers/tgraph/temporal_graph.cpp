@@ -122,7 +122,7 @@ namespace tg
             {
                 node_t owner = topology.owner(port);
                 auto vFrom = vPN[pnIndex(phase, owner)];
-                for (int32_t waitTime=1; waitTime <= topology.num_phases; ++waitTime) {
+                for (int32_t waitTime=0; waitTime < topology.num_phases; ++waitTime) {
                     auto targetPhase = phaseAdd(phase, waitTime);
                     auto vTo = vPP[ppIndex(targetPhase, port)];
                     auto eDescriptor = add_edge(vFrom, vTo, graph);

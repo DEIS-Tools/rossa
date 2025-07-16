@@ -32,7 +32,7 @@ RE_XLM_CHARS = re.compile(f'[${"".join(XML_CHARS_REPLACE.keys())}]')
 
 def apply_substitutions(model: Model, template_declarations: str, model_type: ModelType, config: dict, ext_name: str):
     port_owners = write_array_linestart(p.owner.index for p in model.ports)
-    gen_port_capacities = write_array_linestart(p.capacity for p in model.ports)
+    gen_node_capacities = write_array_linestart(n.capacity for n in model.nodes)
     gen_port_bandwidths = write_array_linestart(p.bandwidth for p in model.ports)
     gen_topology = write_array(model.topology)
     gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows])
@@ -58,7 +58,7 @@ def apply_substitutions(model: Model, template_declarations: str, model_type: Mo
         'NUM_PHASES': model.num_phases,
         'NUM_PORTS': model.num_ports,
         'GEN_PORT_OWNER': port_owners,
-        'GEN_PORT_CAPACITIES': gen_port_capacities,
+        'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
         'GEN_FLOWS': gen_flows,
@@ -93,7 +93,7 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
     sampling_steps = query_config.get('sampling_steps', 200)
     sampling_count = query_config.get('sampling_count', 50)
 
-    max_capacity = max(p.capacity for p in model.ports)
+    max_capacity = max(n.capacity for n in model.nodes)
 
     uppaal_template = data_file_contents(MODEL_TEMPLATE[model_type])
     declarations = write_model_declarations(model, model_type, config, ext_name)

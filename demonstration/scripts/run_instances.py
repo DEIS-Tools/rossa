@@ -24,7 +24,7 @@ class Instance(NamedTuple):
 
 def label_packets_buffered(text: str):
     text = text.replace("totalPortBuffered", "Buf")
-    text = re.sub("gDidOverflow \\* \d+", "Overflow", text)
+    text = re.sub("gDidOverflow \\* \\d+", "Overflow", text)
     return text
 
 
@@ -41,7 +41,6 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         segments = uppaal.UppaalSegment.from_file(f)
 
     seg_port_packets = next((s for s in segments if s.index == 1), None)
-
     plot_segment_line(
         folder / "port_buffered.png",
         seg_port_packets,
@@ -49,6 +48,17 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         xlabel="Time",
         ylabel="Packets",
         ymax=packet_max,
+        label_fn=label_packets_buffered,
+    )
+
+    seg_node_packets = next((s for s in segments if s.index == 0), None)
+    plot_segment_line(
+        folder / "node_buffered.png",
+        seg_node_packets,
+        title=f"Packets buffered ({ex.folder_name})",
+        xlabel="Time",
+        ylabel="Packets",
+        ymax=packet_max*2,
         label_fn=label_packets_buffered,
     )
 
@@ -66,14 +76,17 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
     plot_latency_boxplot(folder / "sampling_latencies_boxplot.png", seg_latency_packets, "Sampled Latency", xlabel="Flow", ylabel="Latency", ymax=latency_max)
 
 
-def run_for_instance(ex: Instance, folder, plotting_cfg, force=False):
+def run_for_instance(ex: Instance, folder, plotting_cfg, force=False, no_uppaal=False):
     # Ensure folder
     instance_folder = folder / ex.folder_name
     if not instance_folder.is_dir():
         instance_folder.mkdir()
 
     # Generate model
-    model_path = instance_folder / "model.xml"
+    if no_uppaal:
+        model_path = instance_folder / f"sim"
+    else:
+        model_path = instance_folder / "model.xml"
     model_cfg_file = folder / 'model_configuration.toml'
     if force or (not model_path.is_file()):
         print(f"Generating model {model_path} for {ex}")
@@ -83,23 +96,31 @@ def run_for_instance(ex: Instance, folder, plotting_cfg, force=False):
             output_file=model_path,
             extension_library_name=ex.extension_name,
             boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
+            no_uppaal=no_uppaal,
+            src_dir=local.cwd
         )
-        # Generate script with proper environment variables to open model
-        str_env_vars = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in ex.environment_vars.items())
-        uppaal_script = instance_folder / "uppaal.sh"
-        with open(uppaal_script, "w") as f:
-            f.write(f"{str_env_vars} uppaal {shlex.quote(model_path)}\n")
-        script_stats = os.stat(uppaal_script)
-        chmod(uppaal_script, script_stats.st_mode | stat.S_IEXEC)
+        if not no_uppaal:
+            # Generate script with proper environment variables to open model
+            str_env_vars = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in ex.environment_vars.items())
+            uppaal_script = instance_folder / "uppaal.sh"
+            with open(uppaal_script, "w") as f:
+                f.write(f"{str_env_vars} uppaal {shlex.quote(model_path)}\n")
+            script_stats = os.stat(uppaal_script)
+            chmod(uppaal_script, script_stats.st_mode | stat.S_IEXEC)
 
     # # Run UPPAAL
     log_name = instance_folder / "verifyta.log"
     segments_name = instance_folder / "segments.json"
     if force or (not log_name.is_file() or log_name.stat().st_mtime < model_path.stat().st_mtime):
         with local.env(**ex.environment_vars):
-            cli.RotorRun.invoke(
-                model_file=model_path, log_name=log_name, segments_name=segments_name, uppaal_key=environ["UPPAAL_KEY"]
-            )
+            if no_uppaal:
+                cli.RotorRun.invoke(
+                    model_file=model_path, log_name=log_name, segments_name=segments_name, no_uppaal=no_uppaal, output_dir = instance_folder
+                )
+            else:
+                cli.RotorRun.invoke(
+                    model_file=model_path, log_name=log_name, segments_name=segments_name, uppaal_key=environ["UPPAAL_KEY"]
+                )
 
     print(f"Generating plots for {model_path}")
     make_single_plots(instance_folder, ex, segments_name, plotting_cfg)
@@ -184,6 +205,7 @@ def plot_segment_line(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel
     ax.grid(True)
 
     for expr, samples in data:
+        if samples is None: continue
         for xy in samples:
             x = [d[0] for d in xy]
             y = [d[1] for d in xy]
@@ -219,22 +241,23 @@ def plot_latency_boxplot(path, segment: uppaal.UppaalSegment, title, xlabel, yla
     plt.close(fig)
 
 
-def main(folder, force=False):
+def main(folder, **kwargs):
     instance_config = read_config(folder / 'instances.toml')
     instances = read_instances(instance_config)
     plotting_cfg = instance_config.get("plotting", {})
     for instance in instances:
         print(f"Running for {instance.folder_name}")
-        run_for_instance(instance, folder, plotting_cfg, force=force)
+        run_for_instance(instance, folder, plotting_cfg, **kwargs)
 
 class CaseStudyCli(plumbum.cli.Application):
     
+    no_uppaal = plumbum.cli.Flag("--fast", default = False, help="Simulate directly in C++ (skipping UPPAAL)")
     uppaal_key = plumbum.cli.SwitchAttr(
         "--uppaal-key",
         str,
         envname="UPPAAL_KEY",
         help="The GUID license key id for UPPAAL (verifyta). Can also be set via environment variable UPPAAL_KEY",
-        mandatory=True,
+        # mandatory=True,
     )
     # TODO: Flag attribute for force
     force = plumbum.cli.Flag(["--force"], help="Force regeneration of artefacts")
@@ -246,9 +269,9 @@ class CaseStudyCli(plumbum.cli.Application):
         base_folder = local.path(self.directory)
         print(f"Generating for folder {base_folder}")
         if self.num_workers > 1:
-            mp_main(base_folder, self.num_workers, force=self.force)
+            mp_main(base_folder, self.num_workers, force=self.force, no_uppaal=self.no_uppaal)
         else:
-            main(base_folder, force=self.force)
+            main(base_folder, force=self.force, no_uppaal=self.no_uppaal)
 
 
 if __name__ == "__main__":
