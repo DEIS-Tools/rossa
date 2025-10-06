@@ -369,16 +369,37 @@ void simulatePhase() {
         }
         for (const auto sw : views::iota(0, NUM_SWITCHES)) {
             port_t p = port_of(node, sw);
-            double sum = 0;
-            for (const auto flow : views::iota(0, NUM_FLOWS)) {
-                sum += schedule[flow][sw];
-            }
-            double flow_rate = sum > 0.0 ? fmin(1.0, PORT_BANDWIDTHS[p] / sum) : 0.0;
             packet_t portSending = 0;
-            for (const auto flow : views::iota(0, NUM_FLOWS)) {
-                const auto sending = static_cast<packet_t>(trunc(schedule[flow][sw] * flow_rate));
-                portSending += sending;
-                sentPort[p][flow] = sending;
+
+            // If port is a self-loop in the current phase, just keep the packets. (This is to avoid issues with latency sampling).
+            if (TOPOLOGY[phase][p] != node) {
+                double sum = 0;
+                for (const auto flow : views::iota(0, NUM_FLOWS)) {
+                    sum += schedule[flow][sw];
+                }
+                double flow_rate = sum > 0.0 ? fmin(1.0, PORT_BANDWIDTHS[p] / sum) : 0.0;
+
+                for (const auto flow : views::iota(0, NUM_FLOWS)) {
+                    const auto sending = static_cast<packet_t>(trunc(schedule[flow][sw] * flow_rate));
+                    portSending += sending;
+                    sentPort[p][flow] = sending;
+                }
+                // If we send less that bandwidth due to rounding down to integer, add packets to the flows with the largest rounding errors.
+                while (portSending < PORT_BANDWIDTHS[p]) {
+                    double max_diff = 0;
+                    flow_t flow_with_max_diff = -1;
+                    for (const auto flow : views::iota(0, NUM_FLOWS)) {
+                        double diff = schedule[flow][sw] * flow_rate - sentPort[p][flow];
+                        if (sentPort[p][flow] < schedule[flow][sw] && diff > max_diff) {
+                            max_diff = diff;
+                            flow_with_max_diff = flow;
+                        }
+                    }
+                    if (flow_with_max_diff == -1) break;  // If no flows can add packets, stop.
+                    portSending++;
+                    sentPort[p][flow_with_max_diff]++;
+                }
+                assert(portSending == (PORT_BANDWIDTHS[p] < trunc(sum) ? PORT_BANDWIDTHS[p] : trunc(sum)));
             }
             gPortSent[p] = portSending;
             maxSendFromPortInPhase = portSending > maxSendFromPortInPhase ? portSending : maxSendFromPortInPhase;
