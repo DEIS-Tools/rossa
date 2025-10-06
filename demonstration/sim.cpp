@@ -196,6 +196,7 @@ void setup() {
     for (const auto f : views::iota(0, NUM_FLOWS)) {
         sampleLatency[f] = -1;
         sampleEntryStep[f] = -1;
+        sampleNode[f] = -1;
         sampleNodePosition[f] = -1;
         sampleIntroIndex[f] = static_cast<int>(trunc(FLOWS[f].amount * fStepsToStable + random(70.0)));
     }
@@ -249,13 +250,15 @@ void samplePortTransfer(flow_t f, node_t destNode, packet_t amountSendNode, pack
                 // Packet leaves network
                 sampleLatency[f] = gCurrentStep - sampleEntryStep[f];
                 sampleNodePosition[f] = -1;
+                sampleNode[f] = -1;
             } else {
                 // Goes to another port
                 // Proportionally re-calculate position among packets arriving at destination (from back with negative position).
                 sampleNodePosition[f] *= static_cast<double>(amountDestNode) / static_cast<double>(amountSendNode);
-                // Our new position is how much is there now "plus our negative position" since we subtracted above.
+                // Our new position is how much there is now "plus our negative position" since we subtracted above.
                 // 0-index. If 10 packets was added, and were -10 then we are the first, if -9 we are the last.
                 sampleNodePosition[f] += gNodeBuffers[destNode][f];
+                sampleNode[f] = destNode;
             }
         }
     }
@@ -407,6 +410,7 @@ void simulatePhase() {
     // Must be here after buffers are modified, but before new ingress.
     for (const auto flow : views::iota(0, NUM_FLOWS)) {
         node_t node = sampleNode[flow];
+        if (node == -1) continue;  // Sample for this flow did not yet ingress network.
         if (sentNode[node][flow] == 0) continue;  // Nothing sent on this flow.
         // Weighted sampling (if flow is split here).
         double sampledWeight = random(sentNode[node][flow]);
