@@ -3,7 +3,6 @@
 #include <random>
 #include <iostream>
 #include <ranges>
-#include <boost/type_traits/declval.hpp>
 namespace views = std::views;
 #include "schedulers/ext/ext.hpp"
 
@@ -279,7 +278,7 @@ packet_t packetsAtNode(node_t n) {
 packet_t totalPacketsBuffered() {
     // return sum(p : port_t) totalPortBuffered(p);
     packet_t sum = 0;
-    for (const auto n : views::iota(0, NUM_NODES)) sum += packetsAtNode(n);
+    for_nodes(n, sum += packetsAtNode(n);)
     return sum;
 }
 
@@ -361,9 +360,6 @@ void simulatePhase() {
     // Calculate sent (only relevant for current phase 'i')
     for (const auto node : views::iota(0, NUM_NODES)) {
         double schedule[NUM_FLOWS][NUM_SWITCHES]{};
-        if (node == 5) {
-            assert(true);
-        }
         for (const auto flow : views::iota(0, NUM_FLOWS)) {
             get_normalised_schedule(node, flow, phase, schedule[flow]);
         }
@@ -464,39 +460,27 @@ void simulatePhase() {
 
 void print_node_and_port_header() {
     std::cout << "step; gDidOverflow; ";
-    for (const auto node : views::iota(0, NUM_NODES)) {
-        std::cout << "packetsAtNode(" << node << "); ";
-    }
-    for (const auto port : views::iota(0, NUM_PORTS)) {
-        std::cout << "portUtilization(" << port << "); ";
-    }
+    for_nodes(node, std::cout << "packetsAtNode(" << node << "); ";)
+    for_ports(port, std::cout << "portUtilization(" << port << "); ";)
     std::cout << "\n";
 }
 
 void print_node_and_port(int step) {
     std::cout << step << "; " << std::boolalpha << gDidOverflow << "; ";
-    for (const auto node : views::iota(0, NUM_NODES)) {
-        std::cout << packetsAtNode(node) << "; ";
-    }
-    for (const auto port : views::iota(0, NUM_PORTS)) {
-        std::cout << portUtilization(port) << "; ";
-    }
+    for_nodes(node, std::cout << packetsAtNode(node) << "; ";)
+    for_ports(port, std::cout << portUtilization(port) << "; ";)
     std::cout << "\n";
 }
 
 void print_sampling_header() {
     std::cout << "sample_id; ";
-    for (const auto flow : views::iota(0, NUM_FLOWS)) {
-        std::cout << "sampleLatency[" << flow << "]; ";
-    }
+    for_flows(flow, std::cout << "sampleLatency[" << flow << "]; ";)
     std::cout << "\n";
 }
 
 void print_sampling_line(int sample_id) {
     std::cout << sample_id << "; ";
-    for (const auto flow : views::iota(0, NUM_FLOWS)) {
-        std::cout << sampleLatency[flow] << "; ";
-    }
+    for_flows(flow, std::cout << sampleLatency[flow] << "; ";)
     std::cout << "\n";
 }
 
