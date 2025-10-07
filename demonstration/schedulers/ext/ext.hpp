@@ -32,6 +32,10 @@ struct Parameters {
     std::vector<packet_t> capacities = {};
     std::vector<packet_t> bandwidths = {};
 
+    [[nodiscard]] constexpr switch_t num_switches() const { return num_ports / num_nodes; }
+    [[nodiscard]] constexpr port_t port_of(node_t node, switch_t sw) const { return node * num_switches() + sw; }
+    [[nodiscard]] constexpr node_t port_owner(port_t port) const { return port / num_switches(); }
+
     // Internal use.
     void resizeLimits() {
         capacities.resize(num_nodes);

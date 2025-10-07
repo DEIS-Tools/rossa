@@ -142,9 +142,9 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
 
 ScheduleChoice getScheduleChoice(int32_t phase_i, int32_t node, int32_t flow) {
     if (network.flows[flow].ingress == node) {
-        // Random via point
-        node_t random_via_node = hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_nodes);  // Choose random node based on phase_i and flow, and the random_num for this round.
-        return cachedChoice(phase_i, node, random_via_node);
+        // Random via point among immediately available nodes (send to a random switch).
+        const auto sw = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches()));
+        return ScheduleChoice{network.parameters.port_of(node, sw), phase_i};
     } else {
         // Quickest to egress
         return cachedChoice(phase_i, node, network.flows[flow].egress);
