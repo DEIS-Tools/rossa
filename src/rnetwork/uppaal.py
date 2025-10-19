@@ -2,7 +2,7 @@ import collections.abc
 import json
 import os
 import re
-from typing import Dict, Literal, Optional, Sequence, Tuple, Union, NamedTuple
+from typing import Literal, Optional, Sequence, Tuple, Union, NamedTuple, Mapping
 
 from .model import Model
 
@@ -56,7 +56,8 @@ def apply_substitutions(model: Model, template_declarations: str, model_type: Mo
         'NUM_NODES': model.num_nodes,
         'NUM_FLOWS': model.num_flows,
         'NUM_PHASES': model.num_phases,
-        'NUM_PORTS': model.num_ports,
+        # 'NUM_PORTS': model.num_ports,
+        'NUM_SWITCHES': model.num_switches,
         'GEN_PORT_OWNER': port_owners,
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
@@ -100,7 +101,7 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
 
     queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
     sim_packets_at_node = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
-    queryValues = [f'totalPortBuffered({i})' for i in range(model.num_ports)]
+    queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
     sim_packets_at_port = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
     max_sent = f'simulate [#<={sim_steps}] {{maxSendFromPortInPhase, extGetPacketsInNetwork()}}'
 
@@ -205,7 +206,7 @@ Samples = Sequence[Points2D]
 class UppaalSegment(NamedTuple):
     is_satisfied: Optional[bool]
     formula_expr: Optional[str]
-    values: Dict[Expr, Samples]
+    values: Mapping[Expr, Samples | None]
     index: int
 
     @classmethod

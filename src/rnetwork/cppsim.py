@@ -4,7 +4,7 @@ import csv
 import io
 from collections import defaultdict
 import collections.abc
-from typing import Dict, Literal, Sequence, Tuple, Union, NamedTuple
+from typing import Dict, Literal, Sequence, Tuple, Union, NamedTuple, Mapping, Optional
 from .model import Model
 from .uppaal import data_file_contents, UppaalSegment
 
@@ -151,7 +151,7 @@ class RossaData(NamedTuple):
     did_overflow: Sequence[Tuple[int, bool]]
     packets_at_nodes: Dict[str, Sequence[Tuple[int, float]]]
     port_utilizations: Dict[str, Sequence[Tuple[int, float]]]
-    flow_samples: Dict[str, Sequence[float]]
+    flow_samples: Mapping[str, Sequence[float]]
 
     @classmethod
     def from_rossa_lines(cls, lines: list[RossaLine], sample_lines: list[RossaSampleLine]) -> "RossaData":
@@ -211,7 +211,7 @@ class RossaData(NamedTuple):
         query_sim_packets_at_node = UppaalSegment(is_satisfied = True, formula_expr = sim_packets_at_node, values = packets_at_nodes, index = 0)
 
         # Note: The new model does not have per-port buffers,
-        packets_at_ports = dict(overflow_samples)
+        packets_at_ports: dict[str, Samples | None] = dict(overflow_samples)
         queryValues = [f'totalPortBuffered({i})' for i in range(num_ports)]
         packets_at_ports.update({key: None for key in queryValues})
         sim_packets_at_port = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'

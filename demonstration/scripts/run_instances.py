@@ -58,7 +58,7 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         title=f"Packets buffered ({ex.folder_name})",
         xlabel="Time",
         ylabel="Packets",
-        ymax=packet_max*2,
+        ymax=packet_max,
         label_fn=label_packets_buffered,
     )
 
@@ -90,15 +90,25 @@ def run_for_instance(ex: Instance, folder, plotting_cfg, force=False, no_uppaal=
     model_cfg_file = folder / 'model_configuration.toml'
     if force or (not model_path.is_file()):
         print(f"Generating model {model_path} for {ex}")
-        cli.RotorGenerate.invoke(
-            config_file=model_cfg_file,
-            model_type="sampling",
-            output_file=model_path,
-            extension_library_name=ex.extension_name,
-            boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
-            no_uppaal=no_uppaal,
-            src_dir=local.cwd
-        )
+        if no_uppaal:
+            cli.RotorGenerate.invoke(
+                config_file=model_cfg_file,
+                model_type="sampling",
+                output_file=model_path,
+                extension_library_name=ex.extension_name,
+                boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
+                no_uppaal=True,
+                src_dir=local.cwd
+            )
+        else:
+            cli.RotorGenerate.invoke(
+                config_file=model_cfg_file,
+                model_type="sampling",
+                output_file=model_path,
+                extension_library_name=ex.extension_name,
+                boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
+                src_dir=local.cwd
+            )
         if not no_uppaal:
             # Generate script with proper environment variables to open model
             str_env_vars = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in ex.environment_vars.items())
@@ -114,7 +124,7 @@ def run_for_instance(ex: Instance, folder, plotting_cfg, force=False, no_uppaal=
     if force or (not log_name.is_file() or log_name.stat().st_mtime < model_path.stat().st_mtime):
         with local.env(**ex.environment_vars):
             if no_uppaal:
-                cli.RotorRun.invoke(
+                cli.RotorRun.invoke({k: str(v) for k,v in ex.environment_vars.items()} if ex.environment_vars else None,
                     model_file=model_path, log_name=log_name, segments_name=segments_name, no_uppaal=no_uppaal, output_dir = instance_folder
                 )
             else:

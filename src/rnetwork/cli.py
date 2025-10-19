@@ -361,8 +361,10 @@ class RotorRun(cli.Application, OutputMixin):
     log_name = cli.SwitchAttr(["--logfile-name"], str, default="verifyta.log")
     segments_name = cli.SwitchAttr(["--segments-name"], str, default="segments.json")
 
-    def main(self):
+    def main(self, env = None):
         self.verbose = True
+
+        self.env = env
 
         timings = SimpleTimings()
 
@@ -409,7 +411,7 @@ class RotorRun(cli.Application, OutputMixin):
         
 
     def _run_cpp(self, model_path):
-        result = subprocess.run(model_path, capture_output=True, shell=True, text=True, cwd=model_path.dirname)
+        result = subprocess.run(model_path, capture_output=True, shell=True, text=True, cwd=model_path.dirname, env=self.env)
         return result.returncode, result.stdout, result.stderr
 
     def _run_verifyta(self, model_path):
