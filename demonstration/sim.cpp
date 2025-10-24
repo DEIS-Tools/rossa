@@ -5,6 +5,7 @@
 #include <ranges>
 namespace views = std::views;
 #include "schedulers/ext/ext.hpp"
+#include "traffic_flow/ext/traffic.hpp"
 
 #ifdef SIM_MODEL_PATH
     #define STRINGIFY(X) STRINGIFY2(X)
@@ -28,7 +29,8 @@ double random(double max) {
 /*** MODEL ***/
 constexpr int NUM_PHASES = ROSSA_NUM_PHASES;
 constexpr int NUM_NODES = ROSSA_NUM_NODES;
-constexpr int NUM_FLOWS = ROSSA_NUM_FLOWS;
+// constexpr int NUM_FLOWS = ROSSA_NUM_FLOWS;
+constexpr int NUM_FLOWS = NUM_NODES * (NUM_NODES - 1) / 4;  // TODO: This depends on configured connection_percentage
 constexpr int NUM_SWITCHES = ROSSA_NUM_SWITCHES;
 constexpr int NUM_PORTS = NUM_NODES * NUM_SWITCHES;
 
@@ -55,7 +57,8 @@ const packet_t PORT_BANDWIDTHS[NUM_PORTS] = ROSSA_GEN_PORT_BANDWIDTHS;
 
 const node_t TOPOLOGY[NUM_PHASES][NUM_PORTS] = ROSSA_GEN_TOPOLOGY;
 
-const Flow FLOWS[NUM_FLOWS] = ROSSA_GEN_FLOWS;
+// const Flow FLOWS[NUM_FLOWS] = ROSSA_GEN_FLOWS;
+Flow FLOWS[NUM_FLOWS];
 
 /*** Convenience functions/macros ***/
 #define loop(num, i, ...) for (const auto i : views::iota(0, num)) { __VA_ARGS__ }
@@ -90,12 +93,41 @@ void pushBuffers() {
     for_nodes(node, extPushBuffers(node, gNodeBuffers[node]);)
 }
 
+void get_traffic_flows() {
+    trafficPrepareChoices();
+    {
+        flow_t flow = 0;
+        for_nodes(ingress, for_nodes(egress,
+            if (ingress != egress) {
+                packet_t amount;
+                trafficGetFlow(gCurrentStep, ingress, egress, amount);
+                // const flow_t flow = ingress * (NUM_NODES - 1) + egress - (ingress < egress ? 1 : 0);
+                if (amount > 0 && flow < NUM_FLOWS) {
+                    FLOWS[flow].ingress = ingress;
+                    FLOWS[flow].egress = egress;
+                    FLOWS[flow].amount = amount;
+                    flow++;
+                }
+            }
+        ))
+        while (flow < NUM_FLOWS) {
+            FLOWS[flow].ingress = 0;
+            FLOWS[flow].egress = 1;
+            FLOWS[flow].amount = 0;
+            flow++;
+        }
+    }
+    // Copy Flows to scheduler
+    for_flows(flow, extPushFlow(flow, FLOWS[flow].ingress, FLOWS[flow].egress, FLOWS[flow].amount);)
+}
+
 void ON_CONSTRUCT() {
     packet_t nodeData[NUM_NODES] = ROSSA_GEN_NODE_CAPACITIES;
     packet_t portData[NUM_PORTS] = ROSSA_GEN_PORT_BANDWIDTHS;
     node_t topoData[NUM_PORTS];
     // Copy Model Parameters
     extBasicParams(NUM_PHASES, NUM_NODES, NUM_FLOWS, NUM_PORTS);
+    trafficBasicParams(NUM_NODES);
 
     // portData = PORT_CAPACITIES;
     for_nodes(node, nodeData[node] = NODE_CAPACITIES[node];)
@@ -109,8 +141,13 @@ void ON_CONSTRUCT() {
     for_ports(port, topoData[port] = port_owner(port);)
     extPushPortOwners(topoData);
 
+    // Create and copy Flows
+    trafficSetup();
+    trafficBegin();
+    get_traffic_flows();
     // Copy Flows
-    for_flows(flow, extPushFlow(flow, FLOWS[flow].ingress, FLOWS[flow].egress, FLOWS[flow].amount);)
+    // for_flows(flow, extPushFlow(flow, FLOWS[flow].ingress, FLOWS[flow].egress, FLOWS[flow].amount);)
+
     // Copy Topology
     for_phases(phase,
         // topoData = TOPOLOGY[phase];
@@ -131,6 +168,7 @@ void ON_BEGIN() {
     maxSendFromPortInPhase = 0;
 
     extBegin();
+    trafficBegin();
     // technically not necessary here, but the principle,
     // because is otherwise only updated at the end of steps.
     pushBuffers();
@@ -355,6 +393,8 @@ void simulatePhase() {
     packet_t recv[NUM_NODES][NUM_FLOWS]{};
     packet_t sentNode[NUM_NODES][NUM_FLOWS]{};
 
+    // Compute new traffic flows
+    get_traffic_flows();
     extPrepareChoices();
 
     // Calculate sent (only relevant for current phase 'i')
@@ -381,7 +421,7 @@ void simulatePhase() {
                     sentPort[p][flow] = sending;
                 }
                 // If we send less that bandwidth due to rounding down to integer, add packets to the flows with the largest rounding errors.
-                while (portSending < PORT_BANDWIDTHS[p]) {
+                if (flow_rate != 1) while (portSending < PORT_BANDWIDTHS[p]) {
                     double max_diff = 0;
                     flow_t flow_with_max_diff = -1;
                     for (const auto flow : views::iota(0, NUM_FLOWS)) {
@@ -395,7 +435,7 @@ void simulatePhase() {
                     portSending++;
                     sentPort[p][flow_with_max_diff]++;
                 }
-                assert(portSending == (PORT_BANDWIDTHS[p] < trunc(sum) ? PORT_BANDWIDTHS[p] : trunc(sum)));
+                // assert(portSending == (PORT_BANDWIDTHS[p] < trunc(sum) ? PORT_BANDWIDTHS[p] : trunc(sum)));
             }
             gPortSent[p] = portSending;
             maxSendFromPortInPhase = portSending > maxSendFromPortInPhase ? portSending : maxSendFromPortInPhase;
@@ -449,7 +489,8 @@ void simulatePhase() {
     // Add ingress
     for (const auto f : views::iota(0, NUM_FLOWS)) {
         const node_t n = FLOWS[f].ingress;
-        ROSSA_DEMAND_INJECTION
+        // ROSSA_DEMAND_INJECTION
+        const packet_t amount = FLOWS[f].amount;
         gNodeBuffers[n][f] += amount;
         sampleIngressAdded(f, amount);
     }

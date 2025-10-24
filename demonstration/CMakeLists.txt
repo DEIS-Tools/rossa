@@ -19,8 +19,9 @@ if (DEFINED ENV{scheduler_lib_path})
 else ()
     ## For working with it independent of the python module
     add_subdirectory(schedulers)
+    add_subdirectory(traffic_flow)
 
-    target_link_libraries(sim PRIVATE fixed)
-#    target_link_libraries(sim PRIVATE rotor_lb)
-#    target_link_libraries(sim PRIVATE valiant)
+    target_link_libraries(sim PRIVATE fixed traffic_gravity_model)
+#    target_link_libraries(sim PRIVATE rotor_lb traffic_gravity_model)
+#    target_link_libraries(sim PRIVATE valiant traffic_gravity_model)
 endif ()
