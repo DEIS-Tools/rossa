@@ -6,7 +6,8 @@
 const int NUM_PHASES = 4;
 const int NUM_NODES = 5;
 const int NUM_FLOWS = 5;
-const int NUM_PORTS = 10;
+const int NUM_SWITCHES = 2;
+const int NUM_PORTS = NUM_NODES * NUM_SWITCHES;
 
 const node_t TOPOLOGY[NUM_PHASES][NUM_PORTS] = {
     {1, 3, 2, 4, 3, 0, 4, 1, 0, 2},
@@ -20,16 +21,12 @@ namespace tg
     {
         Topology tp;
         tp.num_phases = NUM_PHASES;
-        tp.num_ports = NUM_PORTS;
+        tp.num_switches = NUM_SWITCHES;
         tp.num_nodes = NUM_NODES;
         tp.resizeLimits();
         for (int i = 0; i < tp.num_phases; ++i)
         {
             tp.pushTopology(i, TOPOLOGY[i]);
-        }
-        for (int owner= 0; owner < tp.num_nodes; ++owner) {
-            tp.portOwner[owner*2] = owner;
-            tp.portOwner[owner*2+1] = owner;
         }
         return tp;
     }
@@ -65,7 +62,7 @@ namespace tg
         // Create phase ports
         for (int32_t phase = 0; phase < topology.num_phases; ++phase)
         {
-            for (int32_t port = 0; port < topology.num_ports; ++port)
+            for (int32_t port = 0; port < topology.num_ports(); ++port)
             {
                 auto vDescriptor = add_vertex(graph);
                 graph[vDescriptor] = TPort{phase, port};
@@ -102,7 +99,7 @@ namespace tg
         // phase ports make hops to their destination node
         for (int32_t phase = 0; phase < topology.num_phases; ++phase)
         {
-            for (int32_t port = 0; port < topology.num_ports; ++port)
+            for (int32_t port = 0; port < topology.num_ports(); ++port)
             {
                 node_t target = topology(phase, port);
                 auto vFrom = vPP[ppIndex(phase, port)];
@@ -118,7 +115,7 @@ namespace tg
         // phase nodes puts packets in phase port
         for (int32_t phase = 0; phase < topology.num_phases; ++phase)
         {
-            for (int32_t port = 0; port < topology.num_ports; ++port)
+            for (int32_t port = 0; port < topology.num_ports(); ++port)
             {
                 node_t owner = topology.owner(port);
                 auto vFrom = vPN[pnIndex(phase, owner)];

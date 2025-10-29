@@ -220,6 +220,7 @@ class RotorGenerate(cli.Application, OutputMixin):
     )
 
     extension_library_name = cli.SwitchAttr(["--ext-name"], str, mandatory=False, default="libcustom.so")
+    traffic_library_name = cli.SwitchAttr(["--traffic-ext-name"], str, mandatory=False, default="libtraffic_gravity_model.so")
 
     config_file = cli.SwitchAttr(
         ["-c", "--config"],
@@ -300,14 +301,15 @@ class RotorGenerate(cli.Application, OutputMixin):
                 f.write(file_content)
             build_dir = tempfile.mkdtemp(dir = output_file.dirname)
             scheduler_lib_path = self.src_dir / self.extension_library_name
+            traffic_lib_path = self.src_dir / self.traffic_library_name
             subprocess.run(f"cmake -S . -B {build_dir} && cmake --build {build_dir} --target sim && mv {build_dir}/sim {output_file} && rm -r {build_dir}", 
-                           env=dict(os.environ, scheduler_lib_path=scheduler_lib_path, sim_model_path=sim_model_path), 
+                           env=dict(os.environ, scheduler_lib_path=scheduler_lib_path, traffic_lib_path=traffic_lib_path, sim_model_path=sim_model_path), 
                            cwd=self.src_dir, shell=True)
 
         elif self.export_declarations:
             self.diagnostics("Exporting definitions")
             model_definitions = uppaal.write_model_declarations(
-                model, self.model_type, config=self.config, ext_name=self.extension_library_name
+                model, self.model_type, config=self.config, ext_name=self.extension_library_name, traffic_ext_name=self.traffic_library_name
             )
             self.output(model_definitions)
             self.diagnostics("Definitions exported")

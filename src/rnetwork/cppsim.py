@@ -39,7 +39,7 @@ def write_array_linestart(data, new_line_depth=1, indentation='', indent_with=" 
 
 
 
-def apply_substitutions(model: Model, template_declarations: str, model_type: ModelType, config: dict):
+def apply_substitutions(model: Model, template_declarations: str, config: dict):
     query_config = config.get("query", dict())
     sim_steps = query_config.get('sim_steps', 50)
     sampling_steps = query_config.get('sampling_steps', 200)
@@ -49,15 +49,15 @@ def apply_substitutions(model: Model, template_declarations: str, model_type: Mo
     gen_node_capacities = write_array_linestart((n.capacity for n in model.nodes), line_suffix='\\')
     gen_port_bandwidths = write_array_linestart((p.bandwidth for p in model.ports), line_suffix='\\')
     gen_topology = write_array(model.topology, line_suffix='\\')
-    gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows], line_suffix='\\')
+    # gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows], line_suffix='\\')
 
     # Add random sampling variances.
-    flow_config = config.get('flow', dict())
-    sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
-    demand_random = sampling_demand_variance_percent / 100.0
-    demand_injection = "const packet_t amount = FLOWS[f].amount;"
-    if model_type == "sampling" and sampling_demand_variance_percent > 0:
-        demand_injection = f"""const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random({demand_random * 2}) - {demand_random})); const packet_t amount = (int)trunc(round(fAmount));""".strip()
+    # flow_config = config.get('flow', dict())
+    # sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
+    # demand_random = sampling_demand_variance_percent / 100.0
+    # demand_injection = "const packet_t amount = FLOWS[f].amount;"
+    # if model_type == "sampling" and sampling_demand_variance_percent > 0:
+        # demand_injection = f"""const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random({demand_random * 2}) - {demand_random})); const packet_t amount = (int)trunc(round(fAmount));""".strip()
 
     schedule_config = config.get('schedule', dict())
     # Avoid strings masquarading as false true values.
@@ -65,7 +65,7 @@ def apply_substitutions(model: Model, template_declarations: str, model_type: Mo
 
     substitutions = {
         'NUM_NODES': model.num_nodes,
-        'NUM_FLOWS': model.num_flows,
+        # 'NUM_FLOWS': model.num_flows,
         'NUM_PHASES': model.num_phases,
         # 'NUM_PORTS': model.num_ports,
         'NUM_SWITCHES': model.num_switches,
@@ -73,9 +73,9 @@ def apply_substitutions(model: Model, template_declarations: str, model_type: Mo
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
-        'GEN_FLOWS': gen_flows,
-        'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
-        'DEMAND_INJECTION': demand_injection,
+        # 'GEN_FLOWS': gen_flows,
+        # 'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
+        # 'DEMAND_INJECTION': demand_injection,
         # 'EXT_NAME': ext_name,
         'SIM_STEPS': sim_steps,
         'SAMPLING_STEPS': sampling_steps,
@@ -93,7 +93,7 @@ def write_model_declarations(
         config: dict) -> str:
     data_file = DECLARATION_TEMPLATE[model_type]
     template_declarations = data_file_contents(data_file)
-    return apply_substitutions(model, template_declarations, model_type, config)
+    return apply_substitutions(model, template_declarations, config)
 
 
 Points2D = Sequence[Tuple[float, float]]

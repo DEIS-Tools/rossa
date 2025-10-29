@@ -32,7 +32,7 @@ class FlowSolution;
 enum APPROACH { quickest,
     fewest_hops };
 
-std::unique_ptr<std::vector<FlowSolution>> pSolutions;
+std::unique_ptr<std::vector<FlowSolution>> pSolutions = nullptr;
 
 struct Params {
     APPROACH approach;
@@ -216,11 +216,10 @@ void constructSolutions() {
     }
 }
 
-void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
-    const node_t node = network.topology.owner(port);
+void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
     const auto &flow_solution = (*pSolutions)[flow];
     auto choice = flow_solution.getChoice(phase_i, node);
-    if (phase_i == choice.phase && port == choice.port) {
+    if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
         choice_weight = 1;
     } else {
         choice_weight = 0;
@@ -230,10 +229,9 @@ void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step
 void customPrepareChoices() {
 }
 
-void customSetup() {
-    readEnvVars();
-    constructSolutions();
-}
-
-void customBegin() {
+void scheduler_init() {
+    if (!pSolutions) {
+        readEnvVars();
+        constructSolutions();
+    }
 }

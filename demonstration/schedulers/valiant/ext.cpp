@@ -46,7 +46,7 @@ std::mt19937 random_gen;
 // Random number chosen for this simulation step.
 uint32_t random_num;
 
-std::unique_ptr<tg::TemporalGraph> tgGraph;
+std::unique_ptr<tg::TemporalGraph> tgGraph = nullptr;
 std::unique_ptr<std::unordered_map<ChoiceArgs, ScheduleChoice>> pChoiceCache;
 
 
@@ -69,15 +69,6 @@ std::vector<tg::TVertex> outNeighbours(tg::Graph::vertex_descriptor from, P pred
         }
     }
     return result;
-}
-
-port_t findOwnedPort(const Topology &topology, node_t owner) {
-    for (size_t i = 0; i < topology.portOwner.size(); ++i) {
-        if (topology.portOwner[i] == owner) {
-            return i;
-        }
-    }
-    return 0;
 }
 
 void computeToDestination(node_t destination) {
@@ -109,7 +100,8 @@ void computeToDestination(node_t destination) {
 
     for (phase_t i=0; i < params.num_phases; ++i) {
         for (node_t from_node=0; from_node < params.num_nodes; ++from_node) {
-            port_t port = findOwnedPort(tgGraph->topology, from_node);
+            switch_t any_switch = 0;
+            port_t port = tgGraph->topology.port_of(from_node, any_switch);
             phase_t phase = tgGraph->phaseAdd(i, 1);
 
             auto currentVertex = tgGraph->vPN[tgGraph->pnIndex(i, from_node)];
@@ -143,17 +135,16 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
 ScheduleChoice getScheduleChoice(int32_t phase_i, int32_t node, int32_t flow) {
     if (network.flows[flow].ingress == node) {
         // Random via point among immediately available nodes (send to a random switch).
-        const auto sw = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches()));
+        const auto sw = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches));
         return ScheduleChoice{network.parameters.port_of(node, sw), phase_i};
     } else {
         // Quickest to egress
         return cachedChoice(phase_i, node, network.flows[flow].egress);
     }
 }
-void customGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight) {
-    const node_t node = network.topology.owner(port);
+void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
     auto choice = getScheduleChoice(phase_i, node, flow);
-    if (phase_i == choice.phase && port == choice.port) {
+    if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
         choice_weight = 1;
     } else {
         choice_weight = 0;
@@ -164,13 +155,12 @@ void customPrepareChoices() {
     random_num = random_gen();
 }
 
-void customSetup() {
-    // readEnvVars();
-    tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);
-    pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
-    // constructSolutions();
-}
-
-void customBegin() {
+void scheduler_init() {
+    if (!tgGraph) {
+        // readEnvVars();
+        tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);
+        pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
+        // constructSolutions();
+    }
     random_gen = std::mt19937(123456);
 }

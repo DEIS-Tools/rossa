@@ -11,6 +11,12 @@ BOOST_ROOT="$(pwd)/boost_graph" CMAKE_BUILD_TYPE=RelWithDebInfo cmake -B build/
 cmake --build build -j4
 popd
 
+pushd traffic_flow
+mkdir -p build
+CMAKE_BUILD_TYPE=RelWithDebInfo cmake -B build/
+cmake --build build -j4
+popd
+
 # Copy .so files out
 BUILD_PATH=./schedulers/build
 cp $BUILD_PATH/fixed/libfixed.so .
@@ -18,6 +24,9 @@ cp $BUILD_PATH/rnd_choice/librnd_choice.so .
 cp $BUILD_PATH/capacity/libcapacity.so .
 cp $BUILD_PATH/rotor_lb/librotor_lb.so .
 cp $BUILD_PATH/valiant/libvaliant.so .
+
+TRAFFIC_BUILD_PATH=./traffic_flow/build
+cp $TRAFFIC_BUILD_PATH/gravity/libtraffic_gravity_model.so .
 
 # Run demonstration
 

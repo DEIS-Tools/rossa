@@ -56,7 +56,7 @@ namespace tg
             return phase * topology.num_nodes + node;
         }
         size_t ppIndex(phase_t phase, port_t port) {
-            return phase * topology.num_ports + port;
+            return phase * topology.num_ports() + port;
         }
         size_t nIndex(node_t node) {
             return node;

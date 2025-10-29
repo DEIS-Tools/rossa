@@ -30,42 +30,43 @@ XML_CHARS_REPLACE = {
 RE_XLM_CHARS = re.compile(f'[${"".join(XML_CHARS_REPLACE.keys())}]')
 
 
-def apply_substitutions(model: Model, template_declarations: str, model_type: ModelType, config: dict, ext_name: str):
-    port_owners = write_array_linestart(p.owner.index for p in model.ports)
+def apply_substitutions(model: Model, template_declarations: str, config: dict, ext_name: str, traffic_ext_name: str):
+    # port_owners = write_array_linestart(p.owner.index for p in model.ports)
     gen_node_capacities = write_array_linestart(n.capacity for n in model.nodes)
     gen_port_bandwidths = write_array_linestart(p.bandwidth for p in model.ports)
     gen_topology = write_array(model.topology)
-    gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows])
+    # gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows])
 
     # Add random sampling variances.
-    flow_config = config.get('flow', dict())
-    sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
-    demand_random = sampling_demand_variance_percent / 100.0
-    demand_injection = "    const packet_t amount = FLOWS[f].amount;"
-    if model_type == "sampling" and sampling_demand_variance_percent > 0:
-        demand_injection = f"""
-    const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random({demand_random * 2}) - {demand_random}));
-    const packet_t amount = fint(round(fAmount));
-""".strip()
+    # flow_config = config.get('flow', dict())
+    # sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
+    # demand_random = sampling_demand_variance_percent / 100.0
+    # demand_injection = "    const packet_t amount = FLOWS[f].amount;"
+    # if model_type == "sampling" and sampling_demand_variance_percent > 0:
+        # demand_injection = f"""
+    # const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random({demand_random * 2}) - {demand_random}));
+    # const packet_t amount = fint(round(fAmount));
+# """.strip()
         
-    schedule_config = config.get('schedule', dict())
+    # schedule_config = config.get('schedule', dict())
     # Avoid strings masquarading as false true values.
-    gen_schedule_toggle = 'reschedule(gCurrentPhase);' if schedule_config.get('reschedule', False) == True else '//rescheduling disabled in generation\n// reschedule(gCurrentPhase);'
+    # gen_schedule_toggle = 'reschedule(gCurrentPhase);' if schedule_config.get('reschedule', False) == True else '//rescheduling disabled in generation\n// reschedule(gCurrentPhase);'
 
     substitutions = {
         'NUM_NODES': model.num_nodes,
-        'NUM_FLOWS': model.num_flows,
+        # 'NUM_FLOWS': model.num_flows,
         'NUM_PHASES': model.num_phases,
         # 'NUM_PORTS': model.num_ports,
         'NUM_SWITCHES': model.num_switches,
-        'GEN_PORT_OWNER': port_owners,
+        # 'GEN_PORT_OWNER': port_owners,
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
-        'GEN_FLOWS': gen_flows,
-        'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
-        'DEMAND_INJECTION': demand_injection,
-        'EXT_NAME': ext_name
+        # 'GEN_FLOWS': gen_flows,
+        # 'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
+        # 'DEMAND_INJECTION': demand_injection,
+        'EXT_NAME': ext_name,
+        'TRAFFIC_EXT_NAME': traffic_ext_name
     }
 
     def replace_fn(matchobj):
@@ -78,17 +79,18 @@ def write_model_declarations(
         model: Model,
         template: ModelType,
         config: dict,
-        ext_name) -> str:
+        ext_name: str,
+        traffic_ext_name: str) -> str:
     data_file = DECLARATION_TEMPLATE[template]
     template_declarations = data_file_contents(data_file)
-    return apply_substitutions(model, template_declarations, template, config, ext_name)
+    return apply_substitutions(model, template_declarations, config, ext_name, traffic_ext_name)
 
 
 def escape_xml(text: str) -> str:
     return RE_XLM_CHARS.sub(lambda m: XML_CHARS_REPLACE[m.group(0)], text)
 
 
-def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libcustom.so'):
+def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libcustom.so', traffic_ext_name='libtraffic_gravity_model.so'):
     query_config = config.get("query", dict())
     sim_steps = query_config.get('sim_steps', 50)
     sampling_steps = query_config.get('sampling_steps', 200)
@@ -97,7 +99,7 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
     max_capacity = max(n.capacity for n in model.nodes)
 
     uppaal_template = data_file_contents(MODEL_TEMPLATE[model_type])
-    declarations = write_model_declarations(model, model_type, config, ext_name)
+    declarations = write_model_declarations(model, model_type, config, ext_name, traffic_ext_name)
 
     queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
     sim_packets_at_node = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
