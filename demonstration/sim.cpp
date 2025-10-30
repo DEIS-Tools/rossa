@@ -116,8 +116,7 @@ void get_normalised_schedule(node_t node, flow_t flow, phase_t phase_i, double n
     packet_t weights[NUM_SWITCHES];
     packet_t sum = 0;
     for (const auto sw : views::iota(0, NUM_SWITCHES)) {
-        packet_t choice_weight;
-        extGetScheduleChoice(node, flow, phase_i, sw, choice_weight);
+        const packet_t choice_weight = extGetScheduleChoice(node, flow, phase_i, sw);
         weights[sw] = choice_weight;
         sum += choice_weight;
     }
@@ -357,8 +356,7 @@ void simulatePhase() {
     // Add ingress
     for (const auto f : views::iota(0, number_of_flows)) {
         const node_t n = flow_ingress[f];
-        packet_t amount;
-        trafficGetFlow(f, gCurrentStep, amount);
+        packet_t amount = trafficGetFlow(f, gCurrentStep);
         gNodeBuffers[n][f] += amount;
         sampleIngressAdded(f, amount);
     }

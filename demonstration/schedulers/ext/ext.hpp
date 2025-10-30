@@ -133,22 +133,20 @@ void extPushTopology(phase_t phase_i, const node_t *targets);
 void extSchedulerInit(); // Called before each query. Calls scheduler_init()
 void extPushBuffers(node_t node, packet_t *data);
 void extPrepareChoices();
-void extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight);
+packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw);
 }
 #endif
 
 // Schedulers must implement:
 // Called before each UPPAAL query is run.
-// void customBegin();
-void scheduler_init();
+void init_scheduler();
 
 // Called once for each simulation step before calls to customGetScheduleChoice is made.
-void customPrepareChoices();
+void prepare_scheduler_choices();
 
-// Called (perhaps multiple times) each simulation step, and for all phase, node and flow combinations.
-// Must write to the output references choice_phase and choice_port.
-// REQUIREMENT: Between calls to customPrepareChoices this function must yield the same result for the same arguments
-void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight);
+// Called (perhaps multiple times) each simulation step, for all node, flow and switch combinations in the current phase.
+// REQUIREMENT: Between calls to prepare_scheduler_choices this function must yield the same result for the same arguments
+packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw);
 
 struct PortLoad {
 
@@ -163,11 +161,11 @@ struct PortLoad {
         }
         return total;
     }
-    static packet_t getTotalPortLoad(port_t port) {
-        // FIXME: In the new model, the notion of port load does not exists. The node has a single queue.
-        //        For now we pretend node load is uniformly distributed across the "ports", so the capacity-based schedulers can still compile.
-        return getLoad(network.topology.owner(port)) / network.parameters.num_switches;
-    }
+    // static packet_t getTotalPortLoad(port_t port) {
+    //     // FIXME: In the new model, the notion of port load does not exists. The node has a single queue.
+    //     //        For now we pretend node load is uniformly distributed across the "ports", so the capacity-based schedulers can still compile.
+    //     return getLoad(network.topology.owner(port)) / network.parameters.num_switches;
+    // }
 
     // Returns the fraction of packets buffered at this node compared to its capacity.
     static double getLoad(node_t node) {

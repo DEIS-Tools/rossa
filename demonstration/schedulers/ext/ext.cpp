@@ -39,7 +39,7 @@ void extPushTopology(phase_t phase_i, const node_t* targets) {
 
 void extSchedulerInit() {
     network.buffers.fill(0);
-    scheduler_init();
+    init_scheduler();
 }
 
 void extPushBuffers(node_t node, packet_t *data) {
@@ -47,9 +47,9 @@ void extPushBuffers(node_t node, packet_t *data) {
 }
 
 void extPrepareChoices() {
-    customPrepareChoices();
+    prepare_scheduler_choices();
 }
 
-void extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
-    customGetScheduleChoice(node, flow, phase_i, sw, choice_weight);
+packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
+    return get_scheduler_choice(node, flow, phase_i, sw);
 }

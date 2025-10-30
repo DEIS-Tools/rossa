@@ -1,5 +1,5 @@
 [plotting]
-packet_max = 1600
+packet_max = 3100
 latency_max = 8
 
 [[instance]]

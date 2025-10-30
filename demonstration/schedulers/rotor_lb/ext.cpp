@@ -1113,7 +1113,11 @@ void compute_rotor_lb(phase_t phase_i) {
     }
 }
 
-static packet_t cachedChoice(const node_t node, const flow_t flow, const phase_t phase_i, const switch_t sw) {
+// local data per destination
+// non-local data per source and destination
+// = table per node of traffic enqueued per (source,destination)-pair except diagonal and self-destination.
+
+packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     const port_t port = network.parameters.port_of(node, sw);
     auto key = ChoiceArgs{node, flow};
     auto iter = pChoiceCache->find(key);
@@ -1126,19 +1130,11 @@ static packet_t cachedChoice(const node_t node, const flow_t flow, const phase_t
     return port_choice == choice.end() ? 0 : port_choice->weight;
 }
 
-// local data per destination
-// non-local data per source and destination
-// = table per node of traffic enqueued per (source,destination)-pair except diagonal and self-destination.
-
-void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
-    choice_weight = cachedChoice(node, flow, phase_i, sw);
-}
-
-void customPrepareChoices() {
+void prepare_scheduler_choices() {
     random_num = random_gen();
     pChoiceCache->clear();
 }
-void scheduler_init() {
+void init_scheduler() {
     if (!pChoiceCache) {
         // readEnvVars();
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, SchedulerChoice>>();

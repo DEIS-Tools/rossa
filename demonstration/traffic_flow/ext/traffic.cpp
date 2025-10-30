@@ -20,6 +20,6 @@ void trafficInit(int32_t num_nodes, int32_t& num_flows, node_t* ingress_nodes, n
     }
 }
 
-void trafficGetFlow(flow_t flow, int timestep, packet_t& amount) {
-    amount = custom_get_flow_demand(flow, timestep);
+packet_t trafficGetFlow(flow_t flow, int timestep) {
+    return custom_get_flow_demand(flow, timestep);
 }

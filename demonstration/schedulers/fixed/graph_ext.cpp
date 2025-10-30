@@ -135,18 +135,18 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, int32_t f
     return iter->second;
 }
 
-void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
+packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     auto choice = cachedChoice(phase_i, node, flow);
     if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
-        choice_weight = 1;
+        return 1;
     } else {
-        choice_weight = 0;
+        return 0;
     }
 }
 
-void customPrepareChoices() {}
+void prepare_scheduler_choices() {}
 
-void scheduler_init() {
+void init_scheduler() {
     if (!tgGraph) {
         readEnvVars();
         tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);

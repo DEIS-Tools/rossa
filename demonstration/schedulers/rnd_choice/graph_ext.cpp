@@ -221,21 +221,21 @@ void constructSolutions() {
     }
 }
 
-void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
+packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     auto &flow_solution = (*pSolutions)[flow];
     auto choice = flow_solution.getChoice(phase_i, node);
     if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
-        choice_weight = 1;
+        return 1;
     } else {
-        choice_weight = 0;
+        return 0;
     }
 }
 
-void customPrepareChoices() {
+void prepare_scheduler_choices() {
     random_num = random_gen();
 }
 
-void scheduler_init() {
+void init_scheduler() {
     if (!pSolutions) {
         readEnvVars();
         constructSolutions();

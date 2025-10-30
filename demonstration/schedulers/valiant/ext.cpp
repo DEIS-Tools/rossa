@@ -132,30 +132,24 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
     return iter->second;
 }
 
-ScheduleChoice getScheduleChoice(int32_t phase_i, int32_t node, int32_t flow) {
+packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     if (network.flows[flow].ingress == node) {
         // Random via point among immediately available nodes (send to a random switch).
-        const auto sw = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches));
-        return ScheduleChoice{network.parameters.port_of(node, sw), phase_i};
+        const auto random_switch = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches));
+        if (random_switch == sw) return 1;
     } else {
         // Quickest to egress
-        return cachedChoice(phase_i, node, network.flows[flow].egress);
+        auto choice = cachedChoice(phase_i, node, network.flows[flow].egress);
+        if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) return 1;
     }
-}
-void customGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, packet_t& choice_weight) {
-    auto choice = getScheduleChoice(phase_i, node, flow);
-    if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
-        choice_weight = 1;
-    } else {
-        choice_weight = 0;
-    }
+    return 0;
 }
 
-void customPrepareChoices() {
+void prepare_scheduler_choices() {
     random_num = random_gen();
 }
 
-void scheduler_init() {
+void init_scheduler() {
     if (!tgGraph) {
         // readEnvVars();
         tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);

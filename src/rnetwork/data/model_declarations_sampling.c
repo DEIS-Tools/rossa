@@ -52,12 +52,12 @@ import "./<<EXT_NAME>>" {
     void extPushBuffers(node_t node, packet_t& data[MAX_FLOWS]);
     void extSchedulerInit();
     void extPrepareChoices();
-    void extGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step, packet_t& choice_weight);
+    packet_t extGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step);
 };
 import "./<<TRAFFIC_EXT_NAME>>" {
     // Core interface
     void trafficInit(int32_t num_nodes, int32_t& num_flows, node_t& ingress_nodes[MAX_FLOWS], node_t& egress_nodes[MAX_FLOWS]);
-    void trafficGetFlow(flow_t flow, int timestep, packet_t& amount);
+    packet_t trafficGetFlow(flow_t flow, int timestep);
 };
 
 void __ON_CONSTRUCT__() {
@@ -245,8 +245,7 @@ void simulatePhase() {
             packet_t weights[switch_t];
             packet_t s = 0;
             for (sw: switch_t) {
-                packet_t choice_weight;
-                extGetScheduleChoice(node, flow, phase, sw, choice_weight);
+                packet_t choice_weight = extGetScheduleChoice(node, flow, phase, sw);
                 weights[sw] = choice_weight;
                 s += choice_weight;
             }
@@ -346,8 +345,7 @@ void simulatePhase() {
     // Add ingress
     for (flow = 0; flow < number_of_flows; ++flow) {
         const node_t node = flow_ingress[flow];
-        packet_t amount;
-        trafficGetFlow(flow, gCurrentStep, amount);
+        packet_t amount = trafficGetFlow(flow, gCurrentStep);
         gNodeBuffers[node][flow] += amount;
         sampleIngressAdded(flow, amount);
     }

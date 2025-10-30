@@ -25,7 +25,7 @@ extern Parameters parameters;
 extern "C" {
     // Core interface
     void trafficInit(int32_t num_nodes, int32_t& num_flows, rossa::traffic::node_t* ingress_nodes, rossa::traffic::node_t* egress_nodes);
-    void trafficGetFlow(rossa::traffic::flow_t flow, int timestep, rossa::traffic::packet_t& amount);
+    rossa::traffic::packet_t trafficGetFlow(rossa::traffic::flow_t flow, int timestep);
 }
 
 #endif

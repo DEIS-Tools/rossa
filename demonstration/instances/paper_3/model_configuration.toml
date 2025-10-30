@@ -4,7 +4,7 @@ seed = 51672
 [model]
 num_nodes = 16
 num_switches = 4
-bandwidth = 1000 # 450
+bandwidth = 450 # 450
 capacity = 6000 # 1500*4
 
 [flow]
