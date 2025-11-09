@@ -52,7 +52,7 @@ import "./<<EXT_NAME>>" {
     void extPushBuffers(node_t node, packet_t& data[MAX_FLOWS]);
     void extSchedulerInit();
     void extPrepareChoices();
-    packet_t extGetScheduleChoice(port_t port, flow_t flow, phase_t phase_i, int step);
+    packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, int32_t sw);
 };
 import "./<<TRAFFIC_EXT_NAME>>" {
     // Core interface
@@ -243,7 +243,7 @@ void simulatePhase() {
         for (flow = 0; flow < number_of_flows; ++flow) {
             packet_t buffered = gNodeBuffers[node][flow];
             packet_t weights[switch_t];
-            packet_t s = 0;
+            packet_t s = extGetScheduleChoice(node, flow, phase, -1);  // -1 is a dummy switch to allow not attempting to send all buffered packets in the flow.
             for (sw: switch_t) {
                 packet_t choice_weight = extGetScheduleChoice(node, flow, phase, sw);
                 weights[sw] = choice_weight;

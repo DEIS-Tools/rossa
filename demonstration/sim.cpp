@@ -114,7 +114,7 @@ void pushBuffers() {
 void get_normalised_schedule(node_t node, flow_t flow, phase_t phase_i, double norm_schedule[NUM_SWITCHES]) {
     packet_t buffered = gNodeBuffers[node][flow];
     packet_t weights[NUM_SWITCHES];
-    packet_t sum = 0;
+    packet_t sum = extGetScheduleChoice(node, flow, phase_i, -1);  // -1 is a dummy switch to allow not attempting to send all buffered packets in the flow.
     for (const auto sw : views::iota(0, NUM_SWITCHES)) {
         const packet_t choice_weight = extGetScheduleChoice(node, flow, phase_i, sw);
         weights[sw] = choice_weight;

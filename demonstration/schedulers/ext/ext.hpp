@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <vector>
 
@@ -65,6 +66,20 @@ struct Topology {
     }
     constexpr port_t port_of(node_t node, switch_t sw) const {
         return node * num_switches + sw;
+    }
+
+    port_t next_port_to(node_t src_node, node_t dst_node, phase_t current_phase) {
+        for (phase_t offset = 0; offset < num_phases; offset++) {
+            phase_t phase = (current_phase + offset) % num_phases;
+            for (switch_t sw = 0; sw < num_switches; sw++) {
+                port_t port = port_of(src_node, sw);
+                if ((*this)(phase, port) == dst_node) {
+                    return port;
+                }
+            }
+        }
+        assert(false);
+        return -1;
     }
 
     // Internal use below.

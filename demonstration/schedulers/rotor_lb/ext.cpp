@@ -71,14 +71,6 @@ uint32_t random_num;
 std::unique_ptr<std::unordered_map<ChoiceArgs, SchedulerChoice>> pChoiceCache = nullptr;
 
 
-// From: https://arxiv.org/abs/1504.06804
-// hashes x strongly universally into the range [m]
-uint32_t hash_bounded(uint32_t x, uint32_t m) {
-    constexpr uint64_t a = 0x28ec0f222c79fb46; // uniformly selected
-    constexpr uint64_t b = 0x2179c594b7d54ca2; // uniformly selected
-    return (((a * x + b) >> 32) * m) >> 32;
-}
-
 /*
 template <class P>
 std::vector<tg::TVertex> outNeighbours(tg::Graph::vertex_descriptor from, P pred) {
@@ -939,13 +931,41 @@ void computeToDestination(node_t destination) {
 
 
 
-auto owned_ports(const node_t node) {
-    return views::iota(0, network.parameters.num_ports()) | views::filter([node](const port_t port){ return network.topology.owner(port) == node; });
+inline void fairshare_1d(std::vector<packet_t>& v, packet_t capacity) {
+    std::vector<packet_t> input = v;
+    for (auto& e : v) e = 0;
+    while(true) {
+        packet_t count_none_zero = std::ranges::count_if(input, [](const auto& e){ return e > 0; });
+        if (count_none_zero == 0) break;
+        packet_t fair_share = capacity / count_none_zero;
+        if (fair_share == 0) break;
+        for (const auto i : views::iota(static_cast<decltype(input.size())>(0), input.size())) {
+            if (input[i] >= fair_share) {
+                input[i] -= fair_share;
+                v[i] += fair_share;
+                capacity -= fair_share;
+            } else if (input[i] > 0) {
+                capacity -= input[i];
+                v[i] += input[i];
+                input[i] = 0;
+            }
+        }
+    }
+    if (capacity > 0) {
+        for (const auto i : views::iota(static_cast<decltype(input.size())>(0), input.size())) {
+            if (input[i] > 0) {
+                input[i]--;
+                v[i]++;
+                capacity--;
+            }
+            if (capacity == 0) break;
+        }
+    }
 }
 
 class RotorLbTable {
 public:
-    RotorLbTable(node_t n_nodes, node_t local) : n_nodes_(n_nodes), table_(n_nodes * n_nodes_), local_(local) {}
+    RotorLbTable(node_t n_nodes, node_t local) : n_nodes_(n_nodes), table_(n_nodes_ * n_nodes_), direct_traffic_(n_nodes_ * n_nodes_), local_(local) {}
 
     packet_t& traffic(node_t source, node_t destination) {
         return table_[source * n_nodes_ + destination];
@@ -958,8 +978,17 @@ public:
     packet_t& operator()(node_t source, node_t destination) { return traffic(source, destination); }
     [[nodiscard]] const packet_t& operator()(node_t source, node_t destination) const { return traffic(source, destination); }
 
-    [[nodiscard]] packet_t local_traffic(node_t destination) const {
+    [[nodiscard]] packet_t& local_traffic(node_t destination) {
         return (*this)(local_, destination);
+    }
+    [[nodiscard]] const packet_t& local_traffic(node_t destination) const {
+        return (*this)(local_, destination);
+    }
+    packet_t& direct_traffic(node_t source, node_t destination) {
+        return direct_traffic_[source * n_nodes_ + destination];
+    }
+    const packet_t& direct_traffic(node_t source, node_t destination) const {
+        return direct_traffic_[source * n_nodes_ + destination];
     }
     [[nodiscard]] auto non_local() const {
         return views::iota(0, n_nodes_)
@@ -979,28 +1008,38 @@ public:
     }
     struct Offer {
         Offer(const RotorLbTable& parent, port_t port, node_t target)
-        : offer(parent.n_nodes_), capacity(network.parameters.bandwidths[port]), target(target) {}
+        : offer(parent.n_nodes_), capacity(network.parameters.bandwidths[port]), source(parent.local_), target(target) {}
         std::vector<packet_t> offer;
         packet_t capacity;
+        node_t source;
         node_t target;
     };
     std::vector<Offer> get_offer() {
         std::vector<Offer> offers;
         for (const auto& [target, port] : targets()) {
             auto& offer = offers.emplace_back(*this, port, target);
-            // First send direct non-local traffic
+            // Prioritize direct non-local traffic
             for (const auto node : non_local()) {
-                offer.capacity -= traffic(node, target);
-                // traffic(node, target) = 0;
+                direct_traffic(node, target) = traffic(node, target);
+                traffic(node, target) = 0;
+                offer.capacity -= direct_traffic(node, target);
                 assert(offer.capacity >= 0);
             }
-            // Next send direct local traffic
-            offer.capacity -= local_traffic(target);
+            // Next prioritize direct local traffic (use as much as possible)
+            if (offer.capacity < local_traffic(target)) {
+                direct_traffic(local_, target) = offer.capacity;
+                local_traffic(target) -= offer.capacity;
+            } else {
+                direct_traffic(local_, target) = local_traffic(target);
+                local_traffic(target) = 0;
+            }
+            offer.capacity -= direct_traffic(local_, target);
+            assert(offer.capacity >= 0);
         }
-        for (const auto node : non_local()) {
-            if (!is_target(node)) {
-                // Offer remaining local traffic to all targets (Algorithm in RotorNet2017 paper does not specify the case of multiple targets...)
-                for (auto& offer : offers) {
+        for (auto& offer : offers) {
+            for (const auto node : non_local()) {
+                if (!is_target(node)) {
+                    // Offer remaining local traffic to all targets (Algorithm in RotorNet2017 paper does not specify the case of multiple targets...)
                     offer.offer[node] = local_traffic(node);
                 }
             }
@@ -1008,51 +1047,122 @@ public:
         return offers;
     }
 
-    [[nodiscard]] SchedulerChoice get_choice(flow_t flow, const std::vector<std::vector<Offer>>& offers) const {
-        return get_choice(network.flows[flow].ingress, network.flows[flow].egress, offers);
+    void accept_offers(std::vector<std::vector<Offer>>& offers, const phase_t phase_i) {
+        // Find offers to local
+        std::vector<std::reference_wrapper<Offer>> offers_to_local;  // Could work, as indirect representation of matrix.
+        for (auto& offer_vector : offers) {
+            for (auto& offer : offer_vector) {
+                if (offer.target == local_) {
+                    offers_to_local.emplace_back(offer);
+                    assert(offer.offer[local_] == 0);  // Since this is about indirect traffic, we only use non_local destinations. We verify that here.
+                }
+            }
+        }
+
+        // For each destination, find how much traffic can be accepted
+        std::vector<packet_t> destination_capacity(n_nodes_);
+        for (const node_t destination : non_local()) {
+            packet_t remaining_traffic = 0;
+            for (const node_t source : views::iota(0, n_nodes_)) {
+                remaining_traffic += traffic(source, destination);
+            }
+            packet_t available = network.parameters.bandwidths[network.topology.next_port_to(local_, destination, phase_i)] - remaining_traffic;
+            destination_capacity[destination] = available;
+        }
+
+        // Fairshare offers among available buffer capacity and link capacity.
+        std::vector<std::vector<packet_t>> input(n_nodes_);
+        for (const auto offer : offers_to_local) {
+            input[offer.get().source] = offer.get().offer;  // Copy offer to input matrix
+        }
+        for (auto& offer : offers_to_local) for (auto& e : offer.get().offer) e = 0;  // Reset, so we can build it up
+
+        do {
+            std::vector<std::vector<packet_t>> offer_matrix(n_nodes_);  // (offer.source) x (traffic destination)
+            for (const auto& offer : offers_to_local) {
+                offer_matrix[offer.get().source] = input[offer.get().source];  // Copy offer and calculate fairshare over link capacity
+                fairshare_1d(offer_matrix[offer.get().source], offer.get().capacity);
+            }
+            for (const node_t destination : non_local()) {
+                std::vector<packet_t> destination_offers(n_nodes_);
+                for (const auto& offer : offers_to_local) {
+                    destination_offers[offer.get().source] = offer_matrix[offer.get().source][destination];
+                }
+                fairshare_1d(destination_offers, destination_capacity[destination]);
+                for (auto& offer : offers_to_local) {
+                    // Update accepted offer
+                    offer.get().offer[destination] += destination_offers[offer.get().source];
+                    input[offer.get().source][destination] -= destination_offers[offer.get().source];
+                    // Update capacity info
+                    destination_capacity[destination] -= destination_offers[offer.get().source];
+                    offer.get().capacity -= destination_offers[offer.get().source];
+                }
+            }
+            // Clear rows with no more capacity
+            for (const auto& offer : offers_to_local) {
+                assert(offer.get().capacity >= 0);
+                if (offer.get().capacity == 0) {
+                    for (const node_t destination : non_local()) {
+                        input[offer.get().source][destination] = 0;
+                    }
+                }
+            }
+            // Clear columns with no more capacity
+            for (const node_t destination : non_local()) {
+                assert(destination_capacity[destination] >= 0);
+                if (destination_capacity[destination] == 0)
+                for (const auto& offer : offers_to_local) {
+                    input[offer.get().source][destination] = 0;
+                }
+            }
+        } while (std::ranges::any_of(input, [](auto&& v){ return std::ranges::any_of(v, [](auto&& e){ return e > 0; }); }));
     }
-    [[nodiscard]] SchedulerChoice get_choice(node_t source, node_t destination, const std::vector<std::vector<Offer>>& offers) const {
+
+    [[nodiscard]] SchedulerChoice get_choice(flow_t flow, const std::vector<std::vector<Offer>>& offers) const {
+        node_t source = network.flows[flow].ingress;
+        node_t destination = network.flows[flow].egress;
         SchedulerChoice scheduler_choice;
+        // Check if this flow can be sent as direct traffic to destination (in this phase)
         for (const auto& [target, port] : targets()) {
-            if (target == destination) { // Direct traffic
-                auto offer = std::ranges::find(offers[local_], target, [](const auto& offer){ return offer.target; });
-                assert(offer != offers[local_].end());
-                if (source != local_) {
-                    // 1st priority: Non-local direct traffic
-                    // offers[local_][target]
-                    scheduler_choice.emplace_back(port, traffic(source, target));
-                    // return SchedulerChoice(port, );
-                } else {
-                    // 2nd priority: Local direct traffic. TODO: if no more capacity, return -1;
-                    if (offer->capacity >= 0) {
-                        scheduler_choice.emplace_back(port, local_traffic(target));
-                    } else if (local_traffic(target) + offer->capacity >= 0) {
-                        scheduler_choice.emplace_back(port, local_traffic(target) + offer->capacity);
-                    }
-                    // return SchedulerChoice(port);
+            if (target == destination) {
+                // 1st and 2nd priority: Direct traffic (local and non-local)
+                scheduler_choice.emplace_back(port, direct_traffic(source, target));
+                if (traffic(source, target) > 0) {  // Any remaining traffic in buffer after sending direct_traffic(source, target)?
+                    // Only sending some of the buffered flow, so adding a dummy port for the rest.
+                    scheduler_choice.emplace_back(-1, traffic(source, target));
                 }
+                return scheduler_choice;
             }
         }
+        // If we get here, the flow is indirect (destination is not a target).
+        // Check if flow is local, else ignore in this phase.
         if (source == local_) {
-            // TODO: 3rd priority: Local indirect traffic, if offer was accepted by target.
+            // 3rd priority: Sending local indirect traffic, based on how much was accepted by target
+            packet_t sum = 0;
             for (const auto& [target, port] : targets()) {
-                if (target != destination) {
-                    auto offer = std::ranges::find(offers[local_], target, [](const auto& offer){ return offer.target; });
-                    if (offer->capacity) {
-                        scheduler_choice.emplace_back(port, offer->offer[destination]);
-                    }
+                assert(target != destination);
+                auto it = std::ranges::find(offers[local_], target, [](const auto& offer){ return offer.target; });
+                if (it != std::ranges::end(offers[local_]) && it->offer[destination] > 0) {
+                    scheduler_choice.emplace_back(port, it->offer[destination]);
+                    sum += it->offer[destination];
+                }
+            }
+            if (sum > 0) {
+                packet_t remaining = PortLoad::getPacketsForFlow(source, flow) - sum;
+                // assert(remaining >= 0);
+                if (remaining > 0) {
+                    // Any remaining traffic in buffer will use the dummy port
+                    scheduler_choice.emplace_back(-1, remaining);
                 }
             }
         }
-        // TODO: Simulation must allow not immediately scheduling for future ports, but wait and see which port is good to choose.
         return scheduler_choice;
-        // return -1; // Don't schedule yet.
-        // return targets()[random_num%targets().size()].second;  // Random target for now...
     }
 
 private:
     node_t n_nodes_ = 0;
     std::vector<packet_t> table_;
+    std::vector<packet_t> direct_traffic_;
     node_t local_ = 0;
     std::vector<std::pair<node_t,port_t>> targets_;  // (node,port) \in targets: In current phase, we can send traffic to node through port.
 };
@@ -1095,9 +1205,10 @@ void compute_rotor_lb(phase_t phase_i) {
     // Build tables from port load data
     for (const node_t node : views::iota(0, params.num_nodes)) {
         auto& table = tables.emplace_back(params.num_nodes, node);
-        for (const port_t owned_port : owned_ports(node)) {
-            node_t target = network.topology(phase_i, owned_port);
-            table.add_target(target, owned_port);
+        for (const switch_t sw : views::iota(0, params.num_switches)) {
+            port_t port = network.topology.port_of(node, sw);
+            node_t target = network.topology(phase_i, port);
+            table.add_target(target, port);
             for (const flow_t flow : views::iota(0, params.num_flows)) {
                 packet_t load = PortLoad::getPacketsForFlow(node, flow);
                 table(flow) = load;
@@ -1105,7 +1216,11 @@ void compute_rotor_lb(phase_t phase_i) {
         }
         offers.emplace_back(table.get_offer());
     }
-
+    // Accept offers
+    for (auto& table : tables) {
+        table.accept_offers(offers, phase_i);
+    }
+    // Convert accepted offers to scheduling choices
     for (const node_t node : views::iota(0, params.num_nodes)) {
         for (const flow_t flow : views::iota(0, params.num_flows)) {
             (*pChoiceCache)[{node, flow}] = tables[node].get_choice(flow, offers);
@@ -1118,7 +1233,6 @@ void compute_rotor_lb(phase_t phase_i) {
 // = table per node of traffic enqueued per (source,destination)-pair except diagonal and self-destination.
 
 packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
-    const port_t port = network.parameters.port_of(node, sw);
     auto key = ChoiceArgs{node, flow};
     auto iter = pChoiceCache->find(key);
     if (iter == pChoiceCache->end()) {
@@ -1126,6 +1240,7 @@ packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_
         iter = pChoiceCache->find(key);
     }
     auto& choice = iter->second;
+    const port_t port = sw == -1 ? -1 : network.parameters.port_of(node, sw);
     auto port_choice = std::ranges::find(choice, port, [](const auto& pw){ return pw.port; });
     return port_choice == choice.end() ? 0 : port_choice->weight;
 }
