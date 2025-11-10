@@ -90,7 +90,7 @@ double random(const double max, G&& g) {
 
 packet_t custom_get_flow_demand(flow_t flow, int timestep) {
     (void)timestep;
-    if (flow >= base_demands->size()) return 0;
+    if (flow >= static_cast<flow_t>(base_demands->size())) return 0;
     const double fAmount = fmax(0.0, base_demands->at(flow) * (1.0 + random(demand_variance * 2, random_gen_flows) - demand_variance));
     return static_cast<packet_t>(round(fAmount));
 }
