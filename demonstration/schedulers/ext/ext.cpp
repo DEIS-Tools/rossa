@@ -1,7 +1,7 @@
 #include "ext.hpp"
 
+#include <cassert>
 #include <algorithm>
-#include <cstdint>
 #include <vector>
 
 Network network;
@@ -9,6 +9,32 @@ Network network;
 void Buffers::pushBuffers(node_t node, packet_t *data) {
     const size_t start = node * flows_;
     std::copy_n(data, flows_, &values_[start]);
+}
+port_t Topology::next_port_to(node_t src_node, node_t dst_node, phase_t current_phase) {
+    for (phase_t offset = 0; offset < num_phases; offset++) {
+        phase_t phase = (current_phase + offset) % num_phases;
+        for (switch_t sw = 0; sw < num_switches; sw++) {
+            port_t port = port_of(src_node, sw);
+            if ((*this)(phase, port) == dst_node) {
+                return port;
+            }
+        }
+    }
+    assert(false);
+    return -1;
+}
+phase_t Topology::phase_offset_next_connection(node_t src_node, node_t dst_node, phase_t current_phase) {
+    for (phase_t offset = 1; offset <= num_phases; offset++) {
+        phase_t phase = (current_phase + offset) % num_phases;
+        for (switch_t sw = 0; sw < num_switches; sw++) {
+            port_t port = port_of(src_node, sw);
+            if ((*this)(phase, port) == dst_node) {
+                return offset;
+            }
+        }
+    }
+    assert(false);
+    return -1;
 }
 
 void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,

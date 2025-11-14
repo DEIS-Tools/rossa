@@ -11,6 +11,27 @@ namespace views = std::views;
 
 #include <boost/container_hash/hash.hpp>
 
+enum APPROACH { uniform, quickest };
+struct Params {
+    APPROACH approach = uniform;
+};
+Params params{uniform};
+
+class EnvVarException : public std::exception {
+public:
+    virtual const char *what() const noexcept { return "Bad ENV var set"; }
+};
+void readEnvVars() {
+    if (const auto *envVal = std::getenv("CHOICE_APPROACH")) {
+        if (std::strcmp(envVal, "QUICKEST") == 0) {
+            params.approach = quickest;
+        } else if (std::strcmp(envVal, "UNIFORM") == 0) {
+            params.approach = uniform;
+        } else {
+            throw EnvVarException{};
+        }
+    }
+}
 
 struct ChoiceArgs {
     node_t node;
@@ -243,7 +264,7 @@ public:
         } while (std::ranges::any_of(input, [](auto&& v){ return std::ranges::any_of(v, [](auto&& e){ return e > 0; }); }));
     }
 
-    [[nodiscard]] SchedulerChoice get_choice(flow_t flow, const std::vector<std::vector<Offer>>& offers) const {
+    [[nodiscard]] SchedulerChoice get_choice(flow_t flow, const std::vector<std::vector<Offer>>& offers, phase_t phase_i) const {
         node_t source = network.flows[flow].ingress;
         node_t destination = network.flows[flow].egress;
         SchedulerChoice scheduler_choice;
@@ -263,21 +284,56 @@ public:
         // Check if flow is local, else ignore in this phase.
         if (source == local_) {
             // 3rd priority: Sending local indirect traffic, based on how much was accepted by target
-            packet_t sum = 0;
+            std::vector<std::pair<PortWeight,phase_t>> options;
             for (const auto& [target, port] : targets()) {
                 assert(target != destination);
                 auto it = std::ranges::find(offers[local_], target, [](const auto& offer){ return offer.target; });
                 if (it != std::ranges::end(offers[local_]) && it->offer[destination] > 0) {
-                    scheduler_choice.emplace_back(port, it->offer[destination]);
-                    sum += it->offer[destination];
+                    auto priority = params.approach == uniform ? 0 : network.topology.phase_offset_next_connection(target, destination, phase_i);
+                    options.emplace_back(PortWeight(port, it->offer[destination]), priority);
                 }
             }
-            if (sum > 0) {
-                packet_t remaining = PortLoad::getPacketsForFlow(source, flow) - sum;
-                if (remaining > 0) {
-                    // Any remaining traffic in buffer will use the dummy port
-                    scheduler_choice.emplace_back(-1, remaining);
+
+            // If the targets in total accept more traffic than we have, prioritize sending to targets that sooner has connection to the destination.
+            std::ranges::sort(options, std::less<phase_t>(), [](const auto& e){ return e.second; });
+            packet_t buffered = PortLoad::getPacketsForFlow(source, flow);
+            phase_t last_offset = -1;
+            std::vector<PortWeight> options_with_same_offset;
+            auto handle_equal_priority_options = [&buffered, &scheduler_choice](const std::vector<PortWeight>& equal_priority_options) -> bool {
+                auto choice_weights = equal_priority_options | views::transform([](const auto& c){ return c.weight; }) | std::ranges::to<std::vector>();
+                if (const auto sum = std::ranges::fold_left(choice_weights, 0, std::plus<packet_t>()); buffered >= sum) {
+                    buffered -= sum;
+                    for (const auto& choice : equal_priority_options) {
+                        scheduler_choice.emplace_back(choice);
+                    }
+                } else {
+                    fairshare_1d(choice_weights, buffered);
+                    for (const auto& [choice, weight] : std::views::zip(equal_priority_options, choice_weights)) {
+                        scheduler_choice.emplace_back(choice.port, weight);
+                    }
+                    buffered = 0;
+                    return true;
                 }
+                return false;
+            };
+            int count = 0;
+            for (const auto& [option, offset] : options) {
+                if (offset != last_offset) {
+                    count++;
+                    if (!options_with_same_offset.empty()) {
+                        if (handle_equal_priority_options(options_with_same_offset)) break;
+                    }
+                    last_offset = offset;
+                    options_with_same_offset.clear();
+                }
+                options_with_same_offset.emplace_back(option);
+            }
+            if (buffered > 0) {
+                handle_equal_priority_options(options_with_same_offset);
+            }
+            if (buffered > 0) {
+                // Any remaining traffic in buffer will use the dummy port
+                scheduler_choice.emplace_back(-1, buffered);
             }
         }
         return scheduler_choice;
@@ -292,35 +348,6 @@ private:
 };
 
 void compute_rotor_lb(phase_t phase_i) {
-    // RlbMaster rlb(phase_i);
-    // for (int i = 0; i < network.parameters.num_switches(); i++) {
-    //     switch_t sw = rlb._current_commit_queue;
-    //     rlb.newMatching();
-    //     for (int crtToR = 0; crtToR < rlb._N; crtToR++) {
-    //         // get the list of new dst hosts (that every host in this rack is now connected to)
-    //         int dstToR = network.topology(phase_i, network.parameters.port_of(crtToR, sw));  // _top->get_nextToR(slice, crtToR, _current_commit_queue + _hpr);
-    //         if (crtToR != dstToR) {
-    //             std::vector<int> src_hosts;
-    //             int basehost = crtToR * rlb._hpr;
-    //             for (int j = 0; j < rlb._hpr; j++) {
-    //                 src_hosts.push_back(basehost + j);
-    //             }
-    //             for (int j = 0; j < rlb._hpr; j++) {
-    //                 int src_host = basehost + j;
-    //                 if (rlb._Nsenders[src_host] > 0) {
-    //                     for (int sender = 0; sender < rlb._Nsenders[src_host]; sender++) {
-    //                         auto dest = rlb._dst_labels[src_host][sender];
-    //                         auto packets = rlb._pkts_to_send[src_host][sender];
-    //                         // sw
-    //                         // _commits.emplace_back();
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-
     auto const& params = network.parameters;
 
     std::vector<RotorLbTable> tables;
@@ -347,7 +374,7 @@ void compute_rotor_lb(phase_t phase_i) {
     // Convert accepted offers to scheduling choices
     for (const node_t node : views::iota(0, params.num_nodes)) {
         for (const flow_t flow : views::iota(0, params.num_flows)) {
-            (*pChoiceCache)[{node, flow}] = tables[node].get_choice(flow, offers);
+            (*pChoiceCache)[{node, flow}] = tables[node].get_choice(flow, offers, phase_i);
         }
     }
 }
@@ -375,7 +402,7 @@ void prepare_scheduler_choices() {
 }
 void init_scheduler() {
     if (!pChoiceCache) {
-        // readEnvVars();
+        readEnvVars();
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, SchedulerChoice>>();
     }
     random_gen = std::mt19937(123456);
