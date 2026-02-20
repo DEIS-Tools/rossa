@@ -1,5 +1,5 @@
 [random]
-seed = 51672
+seed = 0
 
 [model]
 num_nodes = 16
@@ -11,6 +11,8 @@ capacity = 6000 # 1500*4
 type = "gravity"  # "gravity", "uniform"
 min_demand = 1
 max_demand = 300
+traffic_file = "generated-traffic-demands"
+generate_steps = 1
 # uniform
 num_flows = 8
 sampling_demand_variance_percent=20

@@ -1,5 +1,5 @@
 [plotting]
-packet_max = 1000
+packet_max = 6100
 latency_max = 40
 
 
@@ -26,3 +26,7 @@ reschedule = false
 extension_name = "librotor_lb.so"
 folder_name = "rotorlb"
 reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "UNIFORM"
+
+

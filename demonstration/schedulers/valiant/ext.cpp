@@ -145,8 +145,10 @@ packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_
     return 0;
 }
 
+
 void prepare_scheduler_choices() {
-    random_num = random_gen();
+    random_num = network.buffers.get_buffer_hash();  // UPPAAL requires deterministic functions, so we use buffers (input to the API function) to generate a hash to use as the random number.
+    // random_num = random_gen();
 }
 
 void init_scheduler() {
@@ -156,5 +158,5 @@ void init_scheduler() {
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
         // constructSolutions();
     }
-    random_gen = std::mt19937(123456);
+    // random_gen = std::mt19937(0);
 }

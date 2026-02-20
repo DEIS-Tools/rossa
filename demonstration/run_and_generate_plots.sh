@@ -32,12 +32,23 @@ cp $TRAFFIC_BUILD_PATH/gravity/libtraffic_gravity_model.so .
 
 DEMONSTRATION_FOLDER=./instances
 
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_1 --fast
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_1
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2 --fast
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_2
+# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_1 --force --fast
+# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_1
+# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2 --force --fast
+# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_2
 
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3 --fast
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_3
-python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4 --fast
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_4
+# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3 --force --fast
+# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_3
+# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4 --force --fast
+# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_4
+
+# PGF="--pgf"
+PGF=""
+# FAST="--fast"
+FAST=""
+
+python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/paper_5 --force $PGF $FAST  # --num-workers 4 
+python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_5 $PGF
+
+# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_6 --force $PGF $FAST
+# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_6 $PGF

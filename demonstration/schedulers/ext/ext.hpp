@@ -105,10 +105,23 @@ struct Buffers {
         return values_[node * flows_ + flow];
     };
 
-    void pushBuffers(node_t node, packet_t *data);
+    void pushBuffers(node_t node, const packet_t *data);
+    void pushAllBuffers(const packet_t *data);
 
     void fill(packet_t value = 0) {
         std::fill(values_.begin(), values_.end(), value);
+    }
+
+    uint32_t get_buffer_hash() const {
+        uint32_t seed = values_.size();
+        for(auto y : values_) {
+            uint32_t x = static_cast<uint32_t>(y);
+            x = ((x >> 16) ^ x) * 0x45d9f3b;
+            x = ((x >> 16) ^ x) * 0x45d9f3b;
+            x = (x >> 16) ^ x;
+            seed ^= x + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
     }
 
 private:
@@ -130,13 +143,12 @@ extern Network network;
 extern "C" {
 // Core interface
 void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,
-                    const int32_t *node_capacities, const int32_t *port_bandwidth,
-                    const node_t* flow_ingress, const node_t* flow_egress);
+                    const int32_t *node_capacities, const int32_t *port_bandwidth);
 void extPushTopology(phase_t phase_i, const node_t *targets);
+void extPushFlow(int32_t i, node_t ingress, node_t egress);
 void extSchedulerInit(); // Called before each query. Calls scheduler_init()
-void extPushBuffers(node_t node, packet_t *data);
-void extPrepareChoices();
-packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw);
+// packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, const packet_t *data);
+void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_t* schedule_choice_output);
 }
 #endif
 

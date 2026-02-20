@@ -1,6 +1,6 @@
 [plotting]
-packet_max = 1000
-latency_max = 40
+packet_max = 6100
+latency_max = 20
 
 
 [[instance]]
@@ -26,3 +26,12 @@ reschedule = false
 extension_name = "librotor_lb.so"
 folder_name = "rotorlb"
 reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "UNIFORM"
+
+[[instance]]
+extension_name = "librotor_lb.so"
+folder_name = "rotorlb_quickest"
+reschedule = false
+[instance.envs]
+CHOICE_APPROACH = "QUICKEST"

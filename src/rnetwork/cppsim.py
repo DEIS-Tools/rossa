@@ -50,7 +50,7 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict):
     gen_port_bandwidths = write_array_linestart((p.bandwidth for p in model.ports), line_suffix='\\')
     gen_topology = write_array(model.topology, line_suffix='\\')
     # gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows], line_suffix='\\')
-
+    gen_flows = write_array([(f.ingress.index, f.egress.index, '{' + ','.join(str(amount) for amount in f.amount_over_time) + '}') for f in model.flows], line_suffix='\\')
     # Add random sampling variances.
     # flow_config = config.get('flow', dict())
     # sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
@@ -65,7 +65,8 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict):
 
     substitutions = {
         'NUM_NODES': model.num_nodes,
-        # 'NUM_FLOWS': model.num_flows,
+        'NUM_FLOWS': model.num_flows,
+        'MAX_FLOW_TIME': model.get_max_flow_time(),
         'NUM_PHASES': model.num_phases,
         # 'NUM_PORTS': model.num_ports,
         'NUM_SWITCHES': model.num_switches,
@@ -73,7 +74,7 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict):
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
-        # 'GEN_FLOWS': gen_flows,
+        'GEN_FLOWS': gen_flows,
         # 'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
         # 'DEMAND_INJECTION': demand_injection,
         # 'EXT_NAME': ext_name,

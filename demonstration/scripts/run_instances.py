@@ -21,10 +21,25 @@ class Instance(NamedTuple):
     reschedule: bool = False
     environment_vars: dict = {}
 
+plot_settings = {'png': {'scale': 0.5, 'file': 'png'}, 'pgf': {'scale': 0.16, 'file': 'pgf'}}
+plot_setting = plot_settings['png']  # Default to png
+
+def get_fig_size():
+    _FIG_SCALING = plot_setting['scale']
+    _FIG_WIDTH = 24 * _FIG_SCALING
+    _FIG_HEIGTH = 14 * _FIG_SCALING
+    return (_FIG_WIDTH, _FIG_HEIGTH)
+
+line_names = {'fixed_fewest': 'Fewest hops', 
+              'fixed_quickest': 'Quickest path', 
+              'valiant_quickest': 'Valiant',
+              'rotorlb': 'RotorLB', 
+              'rotorlb_quickest': 'RotorLB*'}
 
 def label_packets_buffered(text: str):
     text = text.replace("totalPortBuffered", "Buf")
     text = re.sub("gDidOverflow \\* \\d+", "Overflow", text)
+    text = re.sub("packetsAtNode", "Node", text)
     return text
 
 
@@ -39,12 +54,14 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
 
     with open(segments_path, "r") as f:
         segments = uppaal.UppaalSegment.from_file(f)
-
+    
+    file_suffix = plot_setting['file']
+    
     seg_port_packets = next((s for s in segments if s.index == 1), None)
     plot_segment_line(
-        folder / "port_buffered.png",
+        folder / f"port_buffered.{file_suffix}",
         seg_port_packets,
-        title=f"Packets buffered ({ex.folder_name})",
+        title=f"Packets buffered ({line_names[ex.folder_name]})",
         xlabel="Time",
         ylabel="Packets",
         ymax=packet_max,
@@ -53,9 +70,9 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
 
     seg_node_packets = next((s for s in segments if s.index == 0), None)
     plot_segment_line(
-        folder / "node_buffered.png",
+        folder / f"node_buffered.{file_suffix}",
         seg_node_packets,
-        title=f"Packets buffered ({ex.folder_name})",
+        title=f"Packets buffered ({line_names[ex.folder_name]})",
         xlabel="Time",
         ylabel="Packets",
         ymax=packet_max,
@@ -64,16 +81,16 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
 
     seg_latency_packets = next((s for s in segments if s.index == 2), None)
     plot_segment_line(
-        folder / "sampling_latencies.png",
+        folder / f"sampling_latencies.{file_suffix}",
         seg_latency_packets,
-        title=f"Sampled latency ({ex.folder_name})",
+        title=f"Sampled latency ({line_names[ex.folder_name]})",
         xlabel="Time",
         ylabel="Latency",
         ymax=latency_max,
         label_fn=label_packets_latency,
     )
 
-    plot_latency_boxplot(folder / "sampling_latencies_boxplot.png", seg_latency_packets, "Sampled Latency", xlabel="Flow", ylabel="Latency", ymax=latency_max)
+    plot_latency_boxplot(folder / f"sampling_latencies_boxplot.{file_suffix}", seg_latency_packets, "Sampled Latency", xlabel="Flow", ylabel="Latency", ymax=latency_max)
 
 
 def run_for_instance(ex: Instance, folder, plotting_cfg, force=False, no_uppaal=False):
@@ -200,28 +217,32 @@ def shorten_label(text, start=5, end=7, middle=".."):
 
 def plot_segment_line(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel, ymax=None, label_fn=None):
     import matplotlib.pyplot as plt
+    import matplotlib.colors as colors
+    import random
 
-    data = [(expr, samples) for expr, samples in segment.values.items()]
+    data = [(expr, samples) for expr, samples in segment.values.items() if not label_fn is None and label_fn(expr) != 'Overflow']
 
-    fig = plt.figure(figsize=(12, 7))
+    fig = plt.figure(figsize=get_fig_size())
     ax = fig.add_subplot(111)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=10)
     if ymax:
         ax.set_ylim(ymin=0, ymax=ymax)
     else:
         ax.set_ylim(ymin=0, auto=True)
     ax.grid(True)
-
-    for expr, samples in data:
+    color_list = list(colors.XKCD_COLORS)
+    random.seed(15)
+    random.shuffle(color_list)
+    for (expr, samples), color in zip(data, color_list):
         if samples is None: continue
         for xy in samples:
             x = [d[0] for d in xy]
             y = [d[1] for d in xy]
-            ax.plot(x, y, label=label_fn(expr) if label_fn else shorten_label(expr))
+            ax.plot(x, y, label=label_fn(expr) if label_fn else shorten_label(expr), linewidth=1, alpha=0.8, color=color)
 
-    fig.legend()
+    # fig.legend(fontsize=10)
     fig.savefig(path)
     plt.close(fig)
 
@@ -231,11 +252,11 @@ def plot_latency_boxplot(path, segment: uppaal.UppaalSegment, title, xlabel, yla
 
     data = [(expr, samples) for expr, samples in segment.values.items()]
 
-    fig = plt.figure(figsize=(12, 7))
+    fig = plt.figure(figsize=get_fig_size())
     ax = fig.add_subplot(111)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=10)
     if ymax:
         ax.set_ylim(ymin=0, ymax=ymax)
     else:
@@ -271,6 +292,10 @@ class CaseStudyCli(plumbum.cli.Application):
     )
     # TODO: Flag attribute for force
     force = plumbum.cli.Flag(["--force"], help="Force regeneration of artefacts")
+    
+    pgf = plumbum.cli.Flag(["--pgf"], default=False, help="Output plots as PGF instead of PNG")
+    if pgf:
+        plot_setting = plot_settings['pgf']
 
     directory = plumbum.cli.SwitchAttr(["-d", "--directory"], plumbum.cli.ExistingDirectory, default=local.path('.'))
     num_workers = plumbum.cli.SwitchAttr(['-j', '--num-workers'], int, default=1)

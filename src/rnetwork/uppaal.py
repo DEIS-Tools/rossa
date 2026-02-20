@@ -30,12 +30,31 @@ XML_CHARS_REPLACE = {
 RE_XLM_CHARS = re.compile(f'[${"".join(XML_CHARS_REPLACE.keys())}]')
 
 
-def apply_substitutions(model: Model, template_declarations: str, config: dict, ext_name: str, traffic_ext_name: str):
+def apply_substitutions(model: Model, template_declarations: str, config: dict, ext_name: str):
     # port_owners = write_array_linestart(p.owner.index for p in model.ports)
     gen_node_capacities = write_array_linestart(n.capacity for n in model.nodes)
     gen_port_bandwidths = write_array_linestart(p.bandwidth for p in model.ports)
     gen_topology = write_array(model.topology)
-    # gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount) for f in model.flows])
+    flow_struct = f'const int MAX_FLOW_TIME = {model.get_max_flow_time()};'
+    if model.get_max_flow_time() == 1:
+        gen_flows = write_array([(f.ingress.index, f.egress.index, f.amount_over_time[0]) for f in model.flows])
+        flow_struct += """
+typedef struct {
+    node_t ingress;
+    node_t egress;
+    packet_t amount;
+} Flow;"""
+        amount = "amount"
+    else:
+        gen_flows = write_array([(f.ingress.index, f.egress.index, '{' + ','.join(str(amount) for amount in f.amount_over_time) + '}') for f in model.flows])
+        flow_struct += """
+typedef int[0,MAX_FLOW_TIME-1] flow_time_t;
+typedef struct {
+    node_t ingress;
+    node_t egress;
+    packet_t amount_over_time[flow_time_t];
+} Flow;"""
+        amount = "amount_over_time[gCurrentFlowStep]"
 
     # Add random sampling variances.
     # flow_config = config.get('flow', dict())
@@ -54,7 +73,8 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict, 
 
     substitutions = {
         'NUM_NODES': model.num_nodes,
-        # 'NUM_FLOWS': model.num_flows,
+        'NUM_FLOWS': model.num_flows,
+        # 'MAX_FLOW_TIME': model.get_max_flow_time(),
         'NUM_PHASES': model.num_phases,
         # 'NUM_PORTS': model.num_ports,
         'NUM_SWITCHES': model.num_switches,
@@ -62,11 +82,12 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict, 
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
-        # 'GEN_FLOWS': gen_flows,
+        'GEN_FLOWS': gen_flows,
         # 'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
         # 'DEMAND_INJECTION': demand_injection,
         'EXT_NAME': ext_name,
-        'TRAFFIC_EXT_NAME': traffic_ext_name
+        'FLOW_STRUCT': flow_struct,
+        'AMOUNT': amount
     }
 
     def replace_fn(matchobj):
@@ -79,18 +100,17 @@ def write_model_declarations(
         model: Model,
         template: ModelType,
         config: dict,
-        ext_name: str,
-        traffic_ext_name: str) -> str:
+        ext_name: str) -> str:
     data_file = DECLARATION_TEMPLATE[template]
     template_declarations = data_file_contents(data_file)
-    return apply_substitutions(model, template_declarations, config, ext_name, traffic_ext_name)
+    return apply_substitutions(model, template_declarations, config, ext_name)
 
 
 def escape_xml(text: str) -> str:
     return RE_XLM_CHARS.sub(lambda m: XML_CHARS_REPLACE[m.group(0)], text)
 
 
-def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libcustom.so', traffic_ext_name='libtraffic_gravity_model.so'):
+def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libcustom.so'):
     query_config = config.get("query", dict())
     sim_steps = query_config.get('sim_steps', 50)
     sampling_steps = query_config.get('sampling_steps', 200)
@@ -99,7 +119,7 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
     max_capacity = max(n.capacity for n in model.nodes)
 
     uppaal_template = data_file_contents(MODEL_TEMPLATE[model_type])
-    declarations = write_model_declarations(model, model_type, config, ext_name, traffic_ext_name)
+    declarations = write_model_declarations(model, model_type, config, ext_name)
 
     queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
     sim_packets_at_node = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'

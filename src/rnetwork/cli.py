@@ -9,7 +9,7 @@ import tempfile
 
 import tomli
 from . import uppaal, plotting, cppsim
-from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches
+from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches, RotorNetLowLatency
 from plumbum import cli, colors, local
 
 # import plotting
@@ -59,22 +59,24 @@ class UniformFlowBuilder:
         if self.max_demand < self.min_demand:
             raise ValueError("Max demand cannot be less than minimum demand")
 
-    def make_flows(self, model: Model, random: Random):
-        flows = []
+    def make_flows(self, model: Model, random: Random) -> list[Flow]:
+        flows: list[Flow] = []
         for _ in range(self.num_flows):
             amount = random.randint(self.min_demand, self.max_demand)
             ingress_idx, egress_idx = random.sample(range(model.num_nodes), 2)
             ingress, egress = (model.nodes[idx] for idx in [ingress_idx, egress_idx])
-            flows.append(Flow(ingress, egress, amount))
+            flows.append(Flow(ingress, egress, [amount]))
         return flows
 
 
 class GravityFlowBuilder:
-    def __init__(self, connection_percentage, min_demand, max_demand, power, **kwargs):
+    def __init__(self, connection_percentage, min_demand, max_demand, power, generate_steps, sampling_demand_variance_percent, **kwargs):
         self.connection_percentage = connection_percentage
         self.min_demand = min_demand
         self.max_demand = max_demand
         self.power = power
+        self.demand_variance = sampling_demand_variance_percent
+        self.generate_steps = generate_steps
         if self.connection_percentage is None:
             raise ValueError("Percentage of all sender receiver pairs must be specified")
         if self.min_demand is None:
@@ -85,9 +87,15 @@ class GravityFlowBuilder:
             raise ValueError("max_demand cannot be less than min_demand")
         if self.power is None:
             raise ValueError("power must be specified")
+        if self.demand_variance is None:
+            raise ValueError("sampling_demand_variance_percent must be specified")
+        else:
+            self.demand_variance = float(self.demand_variance) / 100.0
+        if self.generate_steps is None:
+            raise ValueError("generate_steps must be specified")
 
-    def make_flows(self, model: Model, random: Random):
-        flows = []
+    def make_flows(self, model: Model, random: Random) -> list[Flow]:
+        flows: list[Flow] = []
         num_nodes = model.num_nodes
         # Assign a sender and receiver mass to each node
         mind = self.min_demand
@@ -105,7 +113,24 @@ class GravityFlowBuilder:
         for ingress_idx, egress_idx in send_recv_pairs:
             ingress, egress = (model.nodes[idx] for idx in [ingress_idx, egress_idx])
             amount = round(mind + send_mass[ingress_idx] ** pwr * recv_mass[egress_idx] ** pwr * delta)
-            flows.append(Flow(ingress, egress, amount))
+            amount_over_time = [int(max(0, amount * random.uniform(1 - self.demand_variance, 1 + self.demand_variance))) for _ in range(self.generate_steps)]
+            flows.append(Flow(ingress, egress, amount_over_time))
+        return flows
+
+class FileFlowBuilder:
+    def __init__(self, traffic_file):
+        assert(os.path.isfile(traffic_file))
+        self.file_path = traffic_file
+    def make_flows(self, model: Model, random: Random) -> list[Flow]:
+        flows: list[Flow] = []
+        with open(self.file_path, "r") as file:
+            for line in file:
+                parts = line.split(';')
+                assert(len(parts) == 3)
+                ingress_idx, egress_idx, amounts = parts
+                ingress, egress = (model.nodes[int(idx)] for idx in [ingress_idx, egress_idx])
+                amount_over_time = [int(amount) for amount in amounts.split(',')]
+                flows.append(Flow(ingress, egress, amount_over_time))
         return flows
 
 
@@ -122,37 +147,47 @@ _CONFIG_FLOW_BUILDERS = {"uniform": UniformFlowBuilder, "gravity": GravityFlowBu
 _CONFIG_TOPOLOGY_BUILDERS = {
     "rotating": RotatingSwitches,
     "rotornet2024": Rotornet2024Switches,
+    "rotornetLL": RotorNetLowLatency,
 }
 
 
-def parse_config(config):
+def parse_config(config) -> tuple[UniformFlowBuilder | GravityFlowBuilder | FileFlowBuilder, RotatingSwitches | Rotornet2024Switches | RotorNetLowLatency]:
     """Parses config file returns components for UPPAAL model construction or raises exception"""
     errors = []
 
     def enum_check(value, valid, error_message="Enum error"):
         if value not in valid:
             errors.append(error_message.format(valid_values=",".join(valid)))
+    
+    traffic_file = config["flow"]["traffic_file"] if "traffic_file" in config["flow"] else None
+    if traffic_file is None or not os.path.isfile(traffic_file):
+        enum_check(
+            config["topology"]["type"],
+            _CONFIG_TOPOLOGY_BUILDERS.keys(),
+            "Topology type must be one of {valid_values}",
+        )
 
+    # topology_file = config["topology"]["topology_file"]
+    # if not os.path.isfile(topology_file):
     enum_check(
         config["flow"]["type"],
         _CONFIG_FLOW_BUILDERS.keys(),
         "Flow type must be one of {valid_values}",
     )
-    enum_check(
-        config["topology"]["type"],
-        _CONFIG_TOPOLOGY_BUILDERS.keys(),
-        "Topology type must be one of {valid_values}",
-    )
 
     if errors:
         raise BadConfigException(errors)
 
-    flow_builder = _CONFIG_FLOW_BUILDERS[config["flow"]["type"]](**config["flow"])
+    if traffic_file is None or not os.path.isfile(traffic_file):
+        flow_builder = _CONFIG_FLOW_BUILDERS[config["flow"]["type"]](**config["flow"])
+    else:
+        flow_builder = FileFlowBuilder(traffic_file=config["flow"]["traffic_file"])
+    
     topology_builder = _CONFIG_TOPOLOGY_BUILDERS[config["topology"]["type"]](
         num_switches=config["model"]["num_switches"], **config["topology"]
     )
 
-    return [flow_builder, topology_builder]
+    return flow_builder, topology_builder
 
 
 def str_override(s):
@@ -220,7 +255,7 @@ class RotorGenerate(cli.Application, OutputMixin):
     )
 
     extension_library_name = cli.SwitchAttr(["--ext-name"], str, mandatory=False, default="libcustom.so")
-    traffic_library_name = cli.SwitchAttr(["--traffic-ext-name"], str, mandatory=False, default="libtraffic_gravity_model.so")
+    # traffic_library_name = cli.SwitchAttr(["--traffic-ext-name"], str, mandatory=False, default="libtraffic_gravity_model.so")
 
     config_file = cli.SwitchAttr(
         ["-c", "--config"],
@@ -274,16 +309,17 @@ class RotorGenerate(cli.Application, OutputMixin):
         model_config = self.config["model"]
         model = build_flowless_model(ports_per_node=model_config["num_switches"], random=random, **model_config)
 
-        # Add topology
-        model.topology = topo_builder
+        # Add topology based on switches
+        model.topology = topo_builder.get_topology(model)
 
         # Add flows
         flows = flow_builder.make_flows(model, random=random)
-        for flow in flows:
-            model.add_flow(flow)
-
-        # Add topology based on switches
-        model.topology = topo_builder.get_topology(model)
+        model.add_flows(flows)
+        # Write flows to file, if traffic_file is specified, but it was not yet created.
+        if flow_builder is not FileFlowBuilder and "traffic_file" in self.config["flow"]:
+            with open(self.config["flow"]["traffic_file"], "w") as file:
+                for flow in flows:
+                    file.writelines(f'{flow.ingress.index};{flow.egress.index};' + ','.join(str(amount) for amount in flow.amount_over_time) + '\n')
 
         timings.stop("building_model")
         self.diagnostics("Model built")
@@ -301,15 +337,15 @@ class RotorGenerate(cli.Application, OutputMixin):
                 f.write(file_content)
             build_dir = tempfile.mkdtemp(dir = output_file.dirname)
             scheduler_lib_path = self.src_dir / self.extension_library_name
-            traffic_lib_path = self.src_dir / self.traffic_library_name
-            subprocess.run(f"cmake -S . -B {build_dir} && cmake --build {build_dir} --target sim && mv {build_dir}/sim {output_file} && rm -r {build_dir}", 
-                           env=dict(os.environ, scheduler_lib_path=scheduler_lib_path, traffic_lib_path=traffic_lib_path, sim_model_path=sim_model_path), 
+            # traffic_lib_path = self.src_dir / self.traffic_library_name
+            subprocess.run(f"cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B {build_dir} && cmake --build {build_dir} --target sim && mv {build_dir}/sim {output_file} && rm -r {build_dir}", 
+                           env=dict(os.environ, scheduler_lib_path=scheduler_lib_path, sim_model_path=sim_model_path), 
                            cwd=self.src_dir, shell=True)
 
         elif self.export_declarations:
             self.diagnostics("Exporting definitions")
             model_definitions = uppaal.write_model_declarations(
-                model, self.model_type, config=self.config, ext_name=self.extension_library_name, traffic_ext_name=self.traffic_library_name
+                model, self.model_type, config=self.config, ext_name=self.extension_library_name
             )
             self.output(model_definitions)
             self.diagnostics("Definitions exported")

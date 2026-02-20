@@ -69,9 +69,9 @@ struct SchedulerChoice : std::vector<PortWeight> {
 };
 
 
-std::mt19937 random_gen;
+// std::mt19937 random_gen;
 // Random number chosen for this simulation step.
-uint32_t random_num;
+// uint32_t random_num;
 
 std::unique_ptr<std::unordered_map<ChoiceArgs, SchedulerChoice>> pChoiceCache = nullptr;
 
@@ -397,7 +397,7 @@ packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_
 }
 
 void prepare_scheduler_choices() {
-    random_num = random_gen();
+    // random_num = random_gen();
     pChoiceCache->clear();
 }
 void init_scheduler() {
@@ -405,5 +405,5 @@ void init_scheduler() {
         readEnvVars();
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, SchedulerChoice>>();
     }
-    random_gen = std::mt19937(123456);
+    // random_gen = std::mt19937(123456);
 }

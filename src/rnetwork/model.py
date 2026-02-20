@@ -1,7 +1,7 @@
 from collections import namedtuple, defaultdict
 from typing import Any, Optional, Sequence, NamedTuple
 
-__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches", "Rotornet2024Switches"]
+__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches", "Rotornet2024Switches", "RotorNetLowLatency"]
 
 ScheduleChoice = namedtuple("ScheduleChoice", ["port", "phase"])
 
@@ -11,8 +11,7 @@ class Node(NamedTuple):
 class Flow(NamedTuple):
     ingress: Node
     egress: Node
-    amount: int
-
+    amount_over_time: list[int]  # Each element is the amount at that timestep. Cycles as needed for longer simulations, so constant amount is just a singleton list.
 
 class Port(NamedTuple):
     index: int
@@ -44,8 +43,17 @@ class Model:
             node = self.nodes[node]
         return [p for p in self.ports if p.owner == node]
 
-    def add_flow(self, flow):
+    def add_flow(self, flow: Flow):
         self.flows.append(flow)
+    def add_flows(self, flows: list[Flow]):
+        self.flows.extend(flows)
+    
+    def get_max_flow_time(self) -> int:
+        if len(self.flows) == 0: return 0
+        length = len(self.flows[0].amount_over_time)
+        assert(all(length == len(flow.amount_over_time) for flow in self.flows))
+        return length
+
 
     @property
     def num_nodes(self):
@@ -219,6 +227,47 @@ class Rotornet2024Switches:
             topology.append(matching)
         return topology
 
+class RotorNetLowLatency:
+    def __init__(self, num_switches, **kwargs):
+        self.num_switches = num_switches
+        assert(num_switches == 4)
+
+    def get_topology(self, model: Model) -> Sequence[Sequence[int]]:
+        num_nodes = model.num_nodes
+        assert(num_nodes == 16)
+        base_r = {0: [ 1,  3,  7, 15],
+                  1: [ 0,  2,  6, 14], 
+                  2: [ 3,  1,  5, 13], 
+                  3: [ 2,  0,  4, 12], 
+                  4: [ 5,  7,  3, 11], 
+                  5: [ 4,  6,  2, 10], 
+                  6: [ 7,  5,  1,  9], 
+                  7: [ 6,  4,  0,  8], 
+                  8: [ 9, 11, 15,  7], 
+                  9: [ 8, 10, 14,  6], 
+                 10: [11,  9, 13,  5], 
+                 11: [10,  8, 12,  4], 
+                 12: [13, 15, 11,  3], 
+                 13: [12, 14, 10,  2], 
+                 14: [15, 13,  9,  1], 
+                 15: [14, 12,  8,  0]}
+        gold_perm=[ 0,10, 2, 8, 4,14, 6,12, 1,11, 3, 9, 5,15, 7,13]
+        r1_perm = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15]
+        r2_perm = [ 5, 4, 7, 6, 1, 0, 3, 2,13,12,15,14, 9, 8,11,10]
+        r3_perm = list(reversed(r2_perm))
+        r4_perm = list(reversed(r1_perm))
+        perms = [r1_perm, r2_perm, r3_perm, r4_perm]
+        topology = []
+        num_phases = 4
+        for phase in range(num_phases):
+            matching = [
+                # Select target for each port for each node.
+                base_r[perms[switch][gold_perm[node]]][phase]
+                for node in range(num_nodes)
+                for switch in range(self.num_switches)
+            ]
+            topology.append(matching)
+        return topology
 
 def topo_to_pairings(model: Model):
     num_switches = model.num_ports // model.num_nodes
@@ -229,7 +278,9 @@ def topo_to_pairings(model: Model):
                 yield (switch, src_node, dst_node, phase)
 
 def print_topology_by_switch(model: Model):
-    phases = "ABCDEFGHIJKLMNOP"
+    shaded = True
+
+    phases = "░▒▓█EFGHIJKLMNOP" if shaded else "ABCDEFGHIJKLMNOP"
     # phases = range(1,20)
     num_switches = model.num_ports // model.num_nodes
     for switch in range(num_switches):
@@ -239,15 +290,15 @@ def print_topology_by_switch(model: Model):
         for row in range(model.num_nodes):
             for col in range(model.num_nodes):
                 if row == src and col == dst:
-                    print(f'  {phases[phase]}', end='')
+                    print(f'{phases[phase]}{phases[phase]}' if shaded else f'  {phases[phase]}', end='')
                     try:
                         (_, src, dst, phase) = next(points)
                     except StopIteration:
                         pass
                 else:
-                    print('  .', end='')
-            print()
-        print()
+                    print('▏▔' if shaded else '  .', end='')
+            print('▏' if shaded else '')
+        print('▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔' if shaded else '')
 
 def print_topology_by_phase(model: Model):
     phases = "ABCDEFGHIJKLMNOP"
@@ -287,7 +338,7 @@ def print_topology_combined(model: Model):
 
 
 if __name__ == "__main__":
-    which = 2
+    which = 3
     if which == 0:
         num_nodes = 16
         num_switches = 4
@@ -296,10 +347,14 @@ if __name__ == "__main__":
         num_nodes = 11
         num_switches = 2
         topo_builder = RotatingSwitches(num_switches=num_switches, interval = 6, start_offset = 1)
-    else:
+    elif which == 2:
         num_nodes = 16
         num_switches = 4
         topo_builder = Rotornet2024Switches(num_switches=num_switches)
+    else:
+        num_nodes = 16
+        num_switches = 4
+        topo_builder = RotorNetLowLatency(num_switches=num_switches)
     model = Model()
     for _ in range(num_nodes):
         node = model.add_node(1500 * num_switches)
