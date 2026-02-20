@@ -147,7 +147,6 @@ void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, in
 void extPushTopology(phase_t phase_i, const node_t *targets);
 void extPushFlow(int32_t i, node_t ingress, node_t egress);
 void extSchedulerInit(); // Called before each query. Calls scheduler_init()
-// packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, const packet_t *data);
 void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_t* schedule_choice_output);
 }
 #endif

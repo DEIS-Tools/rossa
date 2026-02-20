@@ -58,27 +58,6 @@ void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, in
         network.parameters.bandwidths[port] = port_bandwidth[port];
     }
 }
-void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,
-                    const int32_t *node_capacities, const int32_t *port_bandwidth,
-                    const node_t* flow_ingress, const node_t* flow_egress) {
-    network.parameters = Parameters{num_phases, num_nodes, num_flows, num_switches};
-    network.parameters.resizeLimits();
-    network.flows.resize(num_flows);
-    network.buffers = Buffers(num_nodes, num_flows);
-
-    network.topology = Topology(network.parameters);
-    network.topology.resizeLimits();
-
-    for (node_t node = 0; node < num_nodes; ++node) {
-        network.parameters.capacities[node] = node_capacities[node];
-    }
-    for (port_t port = 0; port < network.parameters.num_ports(); ++port) {
-        network.parameters.bandwidths[port] = port_bandwidth[port];
-    }
-    for (flow_t flow = 0; flow < num_flows; ++flow) {
-        network.flows[flow] = Flow{flow_ingress[flow], flow_egress[flow]};
-    }
-}
 
 void extPushTopology(phase_t phase_i, const node_t* targets) {
     network.topology.pushTopology(phase_i, targets);
@@ -89,25 +68,10 @@ void extSchedulerInit() {
     init_scheduler();
 }
 
-// void extPushBuffers(node_t node, packet_t *data) {
-//     network.buffers.pushBuffers(node, data);
-// }
-
 void extPushFlow(int32_t i, node_t ingress, node_t egress) {
     network.flows[i] = Flow{ingress, egress};
 }
 
-// void extPrepareChoices() {
-//     prepare_scheduler_choices();
-// }
-
-packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw, const packet_t *data) {
-    network.buffers.pushAllBuffers(data);
-    // for (const auto i : views::iota(0, network.parameters.num_nodes)) {
-    //     network.buffers.pushBuffers(node, data + node * network.parameters.num_flows);
-    // }
-    return get_scheduler_choice(node, flow, phase_i, sw);
-}
 void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_t* schedule_choice_output) {
     network.buffers.pushAllBuffers(buffer_data);
     prepare_scheduler_choices();
@@ -121,6 +85,3 @@ void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_
         }
     }
 }
-// packet_t extGetScheduleChoice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
-//     return get_scheduler_choice(node, flow, phase_i, sw);
-// }

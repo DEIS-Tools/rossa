@@ -1,9 +1,8 @@
 # Clean compiled schedulers
 rm -R schedulers/build/*
-rm -R traffic_flow/build/*
 
 # Clean copied to be path-findable from UPPAAL.
-rm libfixed.so librotor_lb.so libvaliant.so libtraffic_gravity_model.so
+rm libfixed.so librotor_lb.so libvaliant.so
 
 # Clean artefacts created by running
 ## Only keep instances.toml and model_configuration.toml files

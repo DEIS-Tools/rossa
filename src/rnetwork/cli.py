@@ -113,7 +113,7 @@ class GravityFlowBuilder:
         for ingress_idx, egress_idx in send_recv_pairs:
             ingress, egress = (model.nodes[idx] for idx in [ingress_idx, egress_idx])
             amount = round(mind + send_mass[ingress_idx] ** pwr * recv_mass[egress_idx] ** pwr * delta)
-            amount_over_time = [int(max(0, amount * random.uniform(1 - self.demand_variance, 1 + self.demand_variance))) for _ in range(self.generate_steps)]
+            amount_over_time = [int(max(1, amount * random.uniform(1 - self.demand_variance, 1 + self.demand_variance))) for _ in range(self.generate_steps)]
             flows.append(Flow(ingress, egress, amount_over_time))
         return flows
 
