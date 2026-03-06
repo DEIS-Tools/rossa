@@ -242,7 +242,7 @@ void simulatePhase() {
     packet_t sentPort[port_t][flow_t];
     packet_t recv[node_t][flow_t];
     packet_t sentNode[node_t][flow_t];
-    double schedule[flow_t][switch_t];
+    packet_t schedule[flow_t][switch_t];
 
     packet_t schedule_choice_output[SCHEDULE_SIZE];
     extGetScheduleChoiceAll(phase, gNodeBuffers, schedule_choice_output);
@@ -259,14 +259,35 @@ void simulatePhase() {
         for (flow : flow_t) {
             packet_t buffered = get_buffer(node, flow);
             packet_t weights[switch_t];
-            double s = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1)];  // a dummy switch to allow not attempting to send all buffered packets in the flow.
+            packet_t s = 0;
+            packet_t dummy_weight = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1)];  // a dummy switch to allow not attempting to send all buffered packets in the flow.
             for (sw: switch_t) {
                 packet_t choice_weight = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1) + sw + 1];
                 weights[sw] = choice_weight;
-                s = s + choice_weight;
+                s += choice_weight;
             }
-            for (sw: switch_t) {
-                schedule[flow][sw] = s == 0 ? 0.0 : buffered * (weights[sw] / s);
+            if (s > 0) {
+                packet_t sending_sum = 0;
+                packet_t dummy_packets = (buffered * dummy_weight) / (s + dummy_weight);
+                for (sw: switch_t) {
+                    const packet_t sending = (buffered * weights[sw]) / (s + dummy_weight);
+                    schedule[flow][sw] = sending;
+                    sending_sum += sending;
+                }
+                // Add packets until the sum hits `buffered` to counteract effects of rounding down.
+                while (sending_sum + dummy_packets < buffered) {
+                    packet_t max_diff = 0;
+                    switch_t sw_with_max_diff = 0;
+                    for (sw : switch_t) {
+                        packet_t diff = (buffered * weights[sw]) - (s + dummy_weight) * schedule[flow][sw];  // Multiply by common denominator to keep numbers integer
+                        if (diff > max_diff) {
+                            max_diff = diff;
+                            sw_with_max_diff = sw;
+                        }
+                    }
+                    sending_sum += 1;
+                    schedule[flow][sw_with_max_diff] += 1;
+                }
             }
         }
         for (sw: switch_t) {
@@ -275,39 +296,43 @@ void simulatePhase() {
 
             // If port is a self-loop in the current phase, just keep the packets. (This is to avoid issues with latency sampling).
             if (TOPOLOGY[phase][p] != node) {
-                double s = 0;
-                double flow_rate = 0.0;
+                packet_t s = 0;
                 bool stop = false;
                 for (flow : flow_t) {
-                    s = s + schedule[flow][sw];
+                    s += schedule[flow][sw];
                 }
-                if (s > 0.0) {
-                    flow_rate = fmin(1.0, PORT_BANDWIDTHS[p] / s);
-                }
-                for (flow : flow_t) {
-                    const packet_t sending = fint(trunc(schedule[flow][sw] * flow_rate));
-                    portSending += sending;
-                    sentPort[p][flow] = sending;
-                }
-                // If we send less that bandwidth due to rounding down to integer, add packets to the flows with the largest rounding errors.
-                if (flow_rate != 1) while (!stop && portSending < PORT_BANDWIDTHS[p]) {
-                    double max_diff = 0;
-                    flow_t flow_with_max_diff = 0;
-                    bool found = false;
+                if (s <= PORT_BANDWIDTHS[p]) {  // FlowRate = 1
                     for (flow : flow_t) {
-                        double diff = schedule[flow][sw] * flow_rate - sentPort[p][flow];
-                        if (sentPort[p][flow] < schedule[flow][sw] && diff > max_diff) {
-                            max_diff = diff;
-                            flow_with_max_diff = flow;
-                            found = true;
-                        }
+                        const packet_t sending = schedule[flow][sw];
+                        portSending += sending;
+                        sentPort[p][flow] = sending;
                     }
-                    if (!found) {
-                        // break;  // If no flows can add packets, stop.
-                        stop = true;
-                    } else {
-                        portSending += 1;
-                        sentPort[p][flow_with_max_diff] += 1;
+                } else {  // FlowRate = PORT_BANDWIDTHS[p] / s   (we are simulating rational numbers with integers)
+                    for (flow : flow_t) {
+                        const packet_t sending = (schedule[flow][sw] * PORT_BANDWIDTHS[p]) / s;
+                        portSending += sending;
+                        sentPort[p][flow] = sending;
+                    }
+                    // If we send less that bandwidth due to rounding down to integer, add packets to the flows with the largest rounding errors.
+                    while (!stop && portSending < PORT_BANDWIDTHS[p]) {
+                        packet_t max_diff = 0;
+                        flow_t flow_with_max_diff = 0;
+                        bool found = false;
+                        for (flow : flow_t) {
+                            packet_t diff = schedule[flow][sw] * PORT_BANDWIDTHS[p] - s * sentPort[p][flow];  // Multiply by denominator (s) to keep numbers integer
+                            if (sentPort[p][flow] < schedule[flow][sw] && diff > max_diff) {
+                                max_diff = diff;
+                                flow_with_max_diff = flow;
+                                found = true;
+                            }
+                        }
+                        if (!found) {
+                            // break;  // If no flows can add packets, stop.
+                            stop = true;
+                        } else {
+                            portSending += 1;
+                            sentPort[p][flow_with_max_diff] += 1;
+                        }
                     }
                 }
             }
