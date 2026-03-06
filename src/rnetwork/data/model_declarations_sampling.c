@@ -259,14 +259,14 @@ void simulatePhase() {
         for (flow : flow_t) {
             packet_t buffered = get_buffer(node, flow);
             packet_t weights[switch_t];
-            packet_t s = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1)];  // a dummy switch to allow not attempting to send all buffered packets in the flow.
+            double s = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1)];  // a dummy switch to allow not attempting to send all buffered packets in the flow.
             for (sw: switch_t) {
                 packet_t choice_weight = schedule_choice_output[(node * NUM_FLOWS + flow) * (NUM_SWITCHES + 1) + sw + 1];
                 weights[sw] = choice_weight;
-                s += choice_weight;
+                s = s + choice_weight;
             }
             for (sw: switch_t) {
-                schedule[flow][sw] = s == 0 ? 0 : buffered * (weights[sw] / s);
+                schedule[flow][sw] = s == 0 ? 0.0 : buffered * (weights[sw] / s);
             }
         }
         for (sw: switch_t) {
