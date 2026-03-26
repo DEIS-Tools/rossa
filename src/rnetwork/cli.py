@@ -126,20 +126,14 @@ class FileFlowBuilder:
         with open(self.file_path, "r") as file:
             for line in file:
                 parts = line.split(';')
+                if len(parts) != 3:
+                    print(self.file_path, parts)
                 assert(len(parts) == 3)
                 ingress_idx, egress_idx, amounts = parts
                 ingress, egress = (model.nodes[int(idx)] for idx in [ingress_idx, egress_idx])
                 amount_over_time = [int(amount) for amount in amounts.split(',')]
                 flows.append(Flow(ingress, egress, amount_over_time))
         return flows
-
-
-# STRAGIGES:
-
-# SHORTEST HOPS
-# WAIT FOR DIRECT HOP.
-# HEURISTICS: Multiple shortest path.
-# Greedy: use the port with more bandwidth.
 
 
 _CONFIG_FLOW_BUILDERS = {"uniform": UniformFlowBuilder, "gravity": GravityFlowBuilder}
@@ -235,6 +229,12 @@ class RotorSwitchApp(cli.Application):
     VERSION = colors.blue | "0.0.1"
 
 
+def write_file_with_mkdir(content: str, file):
+    out_path = local.path(file)
+    out_path.dirname.mkdir()
+    with open(out_path, "w") as f:
+        f.write(content)
+
 @RotorSwitchApp.subcommand("generate")
 class RotorGenerate(cli.Application, OutputMixin):
 
@@ -243,8 +243,6 @@ class RotorGenerate(cli.Application, OutputMixin):
     no_uppaal = cli.Flag("--fast", default = False, help="Simulate directly in C++ (skipping UPPAAL)")
 
     src_dir = cli.SwitchAttr(["-s", "--src_dir"], cli.ExistingDirectory)
-
-    model_type = cli.SwitchAttr(["--model-type"], cli.Set("base", "sampling"), default="base")
 
     output_file = cli.SwitchAttr(["-o", "--output-file"], str, mandatory=True)
 
@@ -256,6 +254,7 @@ class RotorGenerate(cli.Application, OutputMixin):
 
     extension_library_name = cli.SwitchAttr(["--ext-name"], str, mandatory=False, default="libcustom.so")
     # traffic_library_name = cli.SwitchAttr(["--traffic-ext-name"], str, mandatory=False, default="libtraffic_gravity_model.so")
+    mode = cli.SwitchAttr(["--mode"], str, default="simulation", help="Mode. One of: simulation, verification, smc")
 
     config_file = cli.SwitchAttr(
         ["-c", "--config"],
@@ -325,9 +324,7 @@ class RotorGenerate(cli.Application, OutputMixin):
         self.diagnostics("Model built")
 
         if self.no_uppaal:
-            file_content = cppsim.write_model_declarations(
-                model, model_type=self.model_type, config=self.config
-            )
+            file_content = cppsim.write_model_declarations(model, config=self.config)
             output_file = local.path(self.output_file)
             output_file.dirname.mkdir()
             if not self.src_dir:
@@ -344,20 +341,20 @@ class RotorGenerate(cli.Application, OutputMixin):
 
         elif self.export_declarations:
             self.diagnostics("Exporting definitions")
-            model_definitions = uppaal.write_model_declarations(
-                model, self.model_type, config=self.config, ext_name=self.extension_library_name
-            )
+            model_definitions = uppaal.write_model_declarations(model, ext_name=self.extension_library_name)
             self.output(model_definitions)
             self.diagnostics("Definitions exported")
         else:
             self.diagnostics("Exporting UPPAAL file")
-            file_content = uppaal.write_file(
-                model, config=self.config, model_type=self.model_type, ext_name=self.extension_library_name
-            )
-            out_path = local.path(self.output_file)
-            out_path.dirname.mkdir()
-            with open(out_path, "w") as f:
-                f.write(file_content)
+            if self.mode == "simulation":
+                file_content = uppaal.write_simulation_file(model, config=self.config, ext_name=self.extension_library_name)
+                write_file_with_mkdir(file_content, self.output_file)
+            if self.mode == "verification":
+                file_content = uppaal.write_verification_file(model, config=self.config, ext_name=self.extension_library_name, statistical=False)
+                write_file_with_mkdir(file_content, self.output_file)
+            if self.mode == "smc":
+                file_content = uppaal.write_verification_file(model, config=self.config, ext_name=self.extension_library_name, statistical=True)
+                write_file_with_mkdir(file_content, self.output_file)
 
     def _parse_config_file(self):
         with open(self.config_file, "rb") as f:

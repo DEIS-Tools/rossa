@@ -6,19 +6,10 @@ from typing import Literal, Optional, Sequence, Tuple, Union, NamedTuple, Mappin
 
 from .model import Model
 
-__all__ = ['write_file', 'write_model_declarations', 'parse_uppaal_output']
+__all__ = ['write_simulation_file', 'write_verification_file', 'write_model_declarations', 'parse_uppaal_output']
 
-ModelType = Union[Literal["base"], Literal["sampling"]]
-
-DECLARATION_TEMPLATE = {
-    "base": "model_declarations.c",
-    "sampling": "model_declarations_sampling.c"
-}
-
-MODEL_TEMPLATE = {
-    "base": "model_template.xml",
-    "sampling": "model_template_sampling.xml"
-}
+DECLARATION_TEMPLATE = "model_declarations.c"
+MODEL_TEMPLATE = "model_template.xml"
 
 XML_CHARS_REPLACE = {
     '\'': '&apos;',
@@ -30,7 +21,7 @@ XML_CHARS_REPLACE = {
 RE_XLM_CHARS = re.compile(f'[${"".join(XML_CHARS_REPLACE.keys())}]')
 
 
-def apply_substitutions(model: Model, template_declarations: str, config: dict, ext_name: str):
+def apply_substitutions(model: Model, template_declarations: str, ext_name: str, enable_sampling = True):
     # port_owners = write_array_linestart(p.owner.index for p in model.ports)
     gen_node_capacities = write_array_linestart(n.capacity for n in model.nodes)
     gen_port_bandwidths = write_array_linestart(p.bandwidth for p in model.ports)
@@ -56,38 +47,19 @@ typedef struct {
 } Flow;"""
         amount = "amount_over_time[gCurrentFlowStep]"
 
-    # Add random sampling variances.
-    # flow_config = config.get('flow', dict())
-    # sampling_demand_variance_percent = flow_config.get('sampling_demand_variance_percent', 0)
-    # demand_random = sampling_demand_variance_percent / 100.0
-    # demand_injection = "    const packet_t amount = FLOWS[f].amount;"
-    # if model_type == "sampling" and sampling_demand_variance_percent > 0:
-        # demand_injection = f"""
-    # const double fAmount = fmax(0.0, FLOWS[f].amount * (1.0 + random({demand_random * 2}) - {demand_random}));
-    # const packet_t amount = fint(round(fAmount));
-# """.strip()
-        
-    # schedule_config = config.get('schedule', dict())
-    # Avoid strings masquarading as false true values.
-    # gen_schedule_toggle = 'reschedule(gCurrentPhase);' if schedule_config.get('reschedule', False) == True else '//rescheduling disabled in generation\n// reschedule(gCurrentPhase);'
-
     substitutions = {
         'NUM_NODES': model.num_nodes,
         'NUM_FLOWS': model.num_flows,
-        # 'MAX_FLOW_TIME': model.get_max_flow_time(),
         'NUM_PHASES': model.num_phases,
-        # 'NUM_PORTS': model.num_ports,
         'NUM_SWITCHES': model.num_switches,
-        # 'GEN_PORT_OWNER': port_owners,
         'GEN_NODE_CAPACITIES': gen_node_capacities,
         'GEN_PORT_BANDWIDTHS': gen_port_bandwidths,
         'GEN_TOPOLOGY': gen_topology,
         'GEN_FLOWS': gen_flows,
-        # 'GEN_SCHEDULE_TOGGLE': gen_schedule_toggle,
-        # 'DEMAND_INJECTION': demand_injection,
         'EXT_NAME': ext_name,
         'FLOW_STRUCT': flow_struct,
-        'AMOUNT': amount
+        'AMOUNT': amount,
+        'ENABLE_SAMPLING': "true" if enable_sampling else "false"
     }
 
     def replace_fn(matchobj):
@@ -98,19 +70,17 @@ typedef struct {
 
 def write_model_declarations(
         model: Model,
-        template: ModelType,
-        config: dict,
-        ext_name: str) -> str:
-    data_file = DECLARATION_TEMPLATE[template]
+        ext_name: str,
+        enable_sampling: bool = True) -> str:
+    data_file = DECLARATION_TEMPLATE
     template_declarations = data_file_contents(data_file)
-    return apply_substitutions(model, template_declarations, config, ext_name)
+    return apply_substitutions(model, template_declarations, ext_name, enable_sampling = enable_sampling)
 
 
 def escape_xml(text: str) -> str:
     return RE_XLM_CHARS.sub(lambda m: XML_CHARS_REPLACE[m.group(0)], text)
 
-
-def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libcustom.so'):
+def write_simulation_file(model: Model, config: dict, ext_name: str) -> str:
     query_config = config.get("query", dict())
     sim_steps = query_config.get('sim_steps', 50)
     sampling_steps = query_config.get('sampling_steps', 200)
@@ -118,14 +88,8 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
 
     max_capacity = max(n.capacity for n in model.nodes)
 
-    uppaal_template = data_file_contents(MODEL_TEMPLATE[model_type])
-    declarations = write_model_declarations(model, model_type, config, ext_name)
-
     queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
     sim_packets_at_node = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
-    queryValues = [f'packetsAtNode({i})' for i in range(model.num_nodes)]
-    sim_packets_at_port = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
-    max_sent = f'simulate [#<={sim_steps}] {{maxSendFromPortInPhase, extGetPacketsInNetwork()}}'
 
     latencies = [f'sampleLatency[{i}]' for i in range(model.num_flows)]
     sim_sampled_latencies = f'simulate [#<={sampling_steps};{sampling_count}] {{{", ".join(latencies)}}}'
@@ -134,17 +98,38 @@ def write_file(model: Model, config: dict, model_type: ModelType, ext_name='libc
 
     formula_candidates = [
         ('query_sim_packets_at_node', 'Packets at Node', sim_packets_at_node),
-        ('query_sim_packets_at_port', 'Packets at Port', sim_packets_at_port),
-        ('query_sim_max_sent', 'Max packets sent from a port in a phase', max_sent),
-        ('query_verify_check_overflow', 'Overflow Check', 'A[] gDidOverflow == 0'),
         ('query_sim_sampled_latency', 'Sampled Latencies', sim_sampled_latencies),
-        ('query_sim_port_utilization', 'Port utilization', sim_port_utilization)
+        ('query_sim_port_utilization', 'Port utilization', sim_port_utilization),
     ]
 
     formulas = [
         (comment, query) for config_name, comment, query in formula_candidates
         if query_config.get(config_name, False)
     ]
+    return write_file(model, formulas, ext_name=ext_name, enable_sampling=True)
+
+
+def write_verification_file(model: Model, config: dict, ext_name: str, statistical: bool = False) -> str:
+    if statistical:
+        query_config = config.get("query", dict())
+        smc_steps = query_config.get('smc_steps', 50)
+        smc_probability = query_config.get('smc_probability', 0.5)
+        max_capacity = max(n.capacity for n in model.nodes)
+        formulas = [(f'Overflow probability {capacity}', f'Pr[#<={smc_steps}]([] maxPacketsBuffered() < {capacity})') for capacity in range(max_capacity//10, max_capacity+1, max_capacity//10)]
+        formulas += [
+            ('Statistically no overflow', f'Pr[#<={smc_steps}]([] !gDidOverflow) >= {smc_probability}')
+        ]
+        return write_file(model, formulas, ext_name=ext_name, enable_sampling=False)
+    else:
+        formulas = [
+            ('Overflow Check', 'A[] gDidOverflow == 0')
+        ]
+        return write_file(model, formulas, ext_name=ext_name, enable_sampling=False)
+
+
+def write_file(model: Model, formulas: list[Tuple[str,str]], ext_name='libcustom.so', enable_sampling: bool = True) -> str:
+    uppaal_template = data_file_contents(MODEL_TEMPLATE)
+    declarations = write_model_declarations(model, ext_name, enable_sampling = enable_sampling)
 
     xml_queries = []
     for comment, formula in formulas:

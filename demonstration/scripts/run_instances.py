@@ -18,13 +18,16 @@ from rnetwork import cli, uppaal
 class Instance(NamedTuple):
     extension_name: str
     folder_name: str
-    reschedule: bool = False
+    modes: list[str]
     environment_vars: dict = {}
 
-plot_settings = {'png': {'scale': 0.5, 'file': 'png'}, 'pgf': {'scale': 0.16, 'file': 'pgf'}}
-plot_setting = plot_settings['png']  # Default to png
+plot_settings = {
+    'png': {'scale': 0.5, 'file': 'png', 'legend': True, 'fontsize': 10}, 
+    'pgf': {'scale': 0.145, 'file': 'pgf', 'legend': False, 'fontsize': 8}, 
+    'pdf': {'scale': 0.145, 'file': 'pdf', 'legend': False, 'fontsize': 8}
+}
 
-def get_fig_size():
+def get_fig_size(plot_setting):
     _FIG_SCALING = plot_setting['scale']
     _FIG_WIDTH = 24 * _FIG_SCALING
     _FIG_HEIGTH = 14 * _FIG_SCALING
@@ -48,7 +51,7 @@ def label_packets_latency(text: str):
     return text
 
 
-def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
+def make_single_plots(folder, ex: Instance, segments_path, plot_cfg, plot_setting):
     packet_max = plot_cfg.get("packet_max", 2000)
     latency_max = plot_cfg.get("latency_max", 40)
 
@@ -56,17 +59,6 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         segments = uppaal.UppaalSegment.from_file(f)
     
     file_suffix = plot_setting['file']
-    
-    seg_port_packets = next((s for s in segments if s.index == 1), None)
-    plot_segment_line(
-        folder / f"port_buffered.{file_suffix}",
-        seg_port_packets,
-        title=f"Packets buffered ({line_names[ex.folder_name]})",
-        xlabel="Time",
-        ylabel="Packets",
-        ymax=packet_max,
-        label_fn=label_packets_buffered,
-    )
 
     seg_node_packets = next((s for s in segments if s.index == 0), None)
     plot_segment_line(
@@ -77,9 +69,10 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         ylabel="Packets",
         ymax=packet_max,
         label_fn=label_packets_buffered,
+        plot_setting=plot_setting
     )
 
-    seg_latency_packets = next((s for s in segments if s.index == 2), None)
+    seg_latency_packets = next((s for s in segments if s.index == 1), None)
     plot_segment_line(
         folder / f"sampling_latencies.{file_suffix}",
         seg_latency_packets,
@@ -88,69 +81,78 @@ def make_single_plots(folder, ex: Instance, segments_path, plot_cfg):
         ylabel="Latency",
         ymax=latency_max,
         label_fn=label_packets_latency,
+        plot_setting=plot_setting
     )
 
-    plot_latency_boxplot(folder / f"sampling_latencies_boxplot.{file_suffix}", seg_latency_packets, "Sampled Latency", xlabel="Flow", ylabel="Latency", ymax=latency_max)
+    plot_latency_boxplot(folder / f"sampling_latencies_boxplot.{file_suffix}", seg_latency_packets, "Sampled Latency", xlabel="Flow", ylabel="Latency", ymax=latency_max, plot_setting=plot_setting)
 
-
-def run_for_instance(ex: Instance, folder, plotting_cfg, force=False, no_uppaal=False):
+def run_for_instance(ex: Instance, folder, plotting_cfg, plot_setting, force=False, no_uppaal=False):
     # Ensure folder
     instance_folder = folder / ex.folder_name
     if not instance_folder.is_dir():
         instance_folder.mkdir()
-
-    # Generate model
-    if no_uppaal:
-        model_path = instance_folder / f"sim"
-    else:
-        model_path = instance_folder / "model.xml"
+    
     model_cfg_file = folder / 'model_configuration.toml'
-    if force or (not model_path.is_file()):
-        print(f"Generating model {model_path} for {ex}")
-        if no_uppaal:
+    
+    if no_uppaal:
+        # Generate model
+        model_path = instance_folder / f"sim"
+        if force or (not model_path.is_file()):
+            print(f"Generating model {model_path} for {ex}")
             cli.RotorGenerate.invoke(
                 config_file=model_cfg_file,
-                model_type="sampling",
                 output_file=model_path,
                 extension_library_name=ex.extension_name,
-                boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
                 no_uppaal=True,
-                src_dir=local.cwd
+                src_dir=local.cwd,
             )
-        else:
-            cli.RotorGenerate.invoke(
-                config_file=model_cfg_file,
-                model_type="sampling",
-                output_file=model_path,
-                extension_library_name=ex.extension_name,
-                boolean_overrides=[(f"schedule.reschedule", ex.reschedule)],
-                src_dir=local.cwd
-            )
-        if not no_uppaal:
-            # Generate script with proper environment variables to open model
-            str_env_vars = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in ex.environment_vars.items())
-            uppaal_script = instance_folder / "uppaal.sh"
-            with open(uppaal_script, "w") as f:
-                f.write(f"{str_env_vars} uppaal {shlex.quote(model_path)}\n")
-            script_stats = os.stat(uppaal_script)
-            chmod(uppaal_script, script_stats.st_mode | stat.S_IEXEC)
-
-    # # Run UPPAAL
-    log_name = instance_folder / "verifyta.log"
-    segments_name = instance_folder / "segments.json"
-    if force or (not log_name.is_file() or log_name.stat().st_mtime < model_path.stat().st_mtime):
-        with local.env(**ex.environment_vars):
-            if no_uppaal:
+        log_name = instance_folder / "cpp-simulation.log"
+        segments_name = instance_folder / "segments.json"
+        # Run simulation 
+        if force or (not log_name.is_file() or log_name.stat().st_mtime < model_path.stat().st_mtime):
+            with local.env(**ex.environment_vars):
                 cli.RotorRun.invoke({k: str(v) for k,v in ex.environment_vars.items()} if ex.environment_vars else None,
                     model_file=model_path, log_name=log_name, segments_name=segments_name, no_uppaal=no_uppaal, output_dir = instance_folder
                 )
-            else:
-                cli.RotorRun.invoke(
-                    model_file=model_path, log_name=log_name, segments_name=segments_name, uppaal_key=environ["UPPAAL_KEY"]
+        # Plotting
+        print(f"Generating plots for {instance_folder}")
+        make_single_plots(instance_folder, ex, segments_name, plotting_cfg, plot_setting=plot_setting)
+    else:            
+        MODE_NAME_SUFFIX = {'simulation': '', 'verification': '-verification', 'smc': '-smc'}
+        # Generate model
+        for mode in ex.modes:
+            if mode not in MODE_NAME_SUFFIX.keys(): continue
+            model_path = instance_folder / f"model{MODE_NAME_SUFFIX[mode]}.xml"
+            if force or (not model_path.is_file()):
+                print(f"Generating {mode} model {model_path} for {ex}")
+                cli.RotorGenerate.invoke(
+                    config_file=model_cfg_file,
+                    output_file=model_path,
+                    extension_library_name=ex.extension_name,
+                    src_dir=local.cwd,
+                    mode=mode
                 )
+                # Generate script with proper environment variables to open model
+                str_env_vars = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in ex.environment_vars.items())
+                uppaal_script = instance_folder / f"uppaal{MODE_NAME_SUFFIX[mode]}.sh"
+                with open(uppaal_script, "w") as f:
+                    f.write(f"{str_env_vars} uppaal {shlex.quote(model_path)}\n")
+                script_stats = os.stat(uppaal_script)
+                chmod(uppaal_script, script_stats.st_mode | stat.S_IEXEC)
+            
+            log_name = instance_folder / f"verifyta{MODE_NAME_SUFFIX[mode]}.log"
+            segments_name = instance_folder / f"segments{MODE_NAME_SUFFIX[mode]}.json"
+            # Run UPPAAL
+            if force or (not log_name.is_file() or log_name.stat().st_mtime < model_path.stat().st_mtime):
+                with local.env(**ex.environment_vars):
+                    cli.RotorRun.invoke(
+                        model_file=model_path, log_name=log_name, segments_name=segments_name, uppaal_key=environ["UPPAAL_KEY"]
+                    )
+            # Plotting
+            if mode == "simulation":
+                print(f"Generating plots for {instance_folder}")
+                make_single_plots(instance_folder, ex, segments_name, plotting_cfg, plot_setting=plot_setting)
 
-    print(f"Generating plots for {model_path}")
-    make_single_plots(instance_folder, ex, segments_name, plotting_cfg)
 
 def mp_worker(queue, worker_name, folder, kwargs):
     print(f"Worker {worker_name} started")
@@ -197,7 +199,7 @@ def read_instances(instance_config):
         Instance(
             extension_name=instance["extension_name"],
             folder_name=instance["folder_name"],
-            reschedule=instance["reschedule"],
+            modes=instance["modes"],
             environment_vars=instance.get("envs", {}),
         )
         for instance in instance_config["instance"]
@@ -215,25 +217,27 @@ def shorten_label(text, start=5, end=7, middle=".."):
     return f"{text[:start]}{middle}{text[-end:]}"
 
 
-def plot_segment_line(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel, ymax=None, label_fn=None):
+def plot_segment_line(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel, plot_setting, ymax=None, label_fn=None):
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
     import random
 
     data = [(expr, samples) for expr, samples in segment.values.items() if not label_fn is None and label_fn(expr) != 'Overflow']
 
-    fig = plt.figure(figsize=get_fig_size())
+    fig = plt.figure(figsize=get_fig_size(plot_setting))
     ax = fig.add_subplot(111)
-    ax.set_title(title, fontsize=10)
-    ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_ylabel(ylabel, fontsize=10)
+    ax.set_title(title, fontsize=plot_setting['fontsize'])
+    ax.set_xlabel(xlabel, fontsize=plot_setting['fontsize'])
+    ax.set_ylabel(ylabel, fontsize=plot_setting['fontsize'])
+    ax.tick_params(axis='both', labelsize=plot_setting['fontsize'])
     if ymax:
         ax.set_ylim(ymin=0, ymax=ymax)
     else:
         ax.set_ylim(ymin=0, auto=True)
+    ax.autoscale(enable=True, axis='x', tight=True)
     ax.grid(True)
     color_list = list(colors.XKCD_COLORS)
-    random.seed(15)
+    random.seed(35)
     random.shuffle(color_list)
     for (expr, samples), color in zip(data, color_list):
         if samples is None: continue
@@ -242,21 +246,22 @@ def plot_segment_line(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel
             y = [d[1] for d in xy]
             ax.plot(x, y, label=label_fn(expr) if label_fn else shorten_label(expr), linewidth=1, alpha=0.8, color=color)
 
-    # fig.legend(fontsize=10)
-    fig.savefig(path)
+    # fig.legend(fontsize=plot_setting['fontsize'])
+    fig.savefig(path, bbox_inches='tight')
     plt.close(fig)
 
 
-def plot_latency_boxplot(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel, ymax=None, label_fn=None):
+def plot_latency_boxplot(path, segment: uppaal.UppaalSegment, title, xlabel, ylabel, plot_setting, ymax=None, label_fn=None):
     import matplotlib.pyplot as plt
 
     data = [(expr, samples) for expr, samples in segment.values.items()]
 
-    fig = plt.figure(figsize=get_fig_size())
+    fig = plt.figure(figsize=get_fig_size(plot_setting))
     ax = fig.add_subplot(111)
-    ax.set_title(title, fontsize=10)
-    ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_ylabel(ylabel, fontsize=10)
+    ax.set_title(title, fontsize=plot_setting['fontsize'])
+    ax.set_xlabel(xlabel, fontsize=plot_setting['fontsize'])
+    ax.set_ylabel(ylabel, fontsize=plot_setting['fontsize'])
+    ax.tick_params(axis='both', labelsize=plot_setting['fontsize'])
     if ymax:
         ax.set_ylim(ymin=0, ymax=ymax)
     else:
@@ -268,7 +273,7 @@ def plot_latency_boxplot(path, segment: uppaal.UppaalSegment, title, xlabel, yla
         latencies = [flow_sample[-1][1] for flow_sample in samples if flow_sample[-1][1] > 0]
         bp.append(latencies)
     ax.boxplot(bp, showmeans=True, meanline=True)
-    fig.savefig(path)
+    fig.savefig(path, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -294,19 +299,23 @@ class CaseStudyCli(plumbum.cli.Application):
     force = plumbum.cli.Flag(["--force"], help="Force regeneration of artefacts")
     
     pgf = plumbum.cli.Flag(["--pgf"], default=False, help="Output plots as PGF instead of PNG")
-    if pgf:
-        plot_setting = plot_settings['pgf']
+    pdf = plumbum.cli.Flag(["--pdf"], default=False, help="Output plots as PDF")
 
     directory = plumbum.cli.SwitchAttr(["-d", "--directory"], plumbum.cli.ExistingDirectory, default=local.path('.'))
     num_workers = plumbum.cli.SwitchAttr(['-j', '--num-workers'], int, default=1)
 
-    def main(self):
+    def main(self):    
+        plot_setting = plot_settings['png']
+        if self.pgf:
+            plot_setting = plot_settings['pgf']
+        elif self.pdf:
+            plot_setting = plot_settings['pdf']
         base_folder = local.path(self.directory)
         print(f"Generating for folder {base_folder}")
         if self.num_workers > 1:
-            mp_main(base_folder, self.num_workers, force=self.force, no_uppaal=self.no_uppaal)
+            mp_main(base_folder, self.num_workers, plot_setting=plot_setting, force=self.force, no_uppaal=self.no_uppaal)
         else:
-            main(base_folder, force=self.force, no_uppaal=self.no_uppaal)
+            main(base_folder, plot_setting=plot_setting, force=self.force, no_uppaal=self.no_uppaal)
 
 
 if __name__ == "__main__":

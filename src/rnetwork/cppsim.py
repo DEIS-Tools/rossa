@@ -10,12 +10,7 @@ from .uppaal import data_file_contents, UppaalSegment
 
 __all__ = ['write_model_declarations', 'parse_sim_output']
 
-ModelType = Union[Literal["base"], Literal["sampling"]]
-
-DECLARATION_TEMPLATE = {
-    "base": "sim-model.h",
-    "sampling": "sim-model.h"
-}
+DECLARATION_TEMPLATE = "sim-model.h"
 
 def write_array(data, new_line_depth=1, indentation='', indent_with="  ", line_suffix=''):
     if isinstance(data, collections.abc.Sequence) and not isinstance(data, str):
@@ -88,11 +83,8 @@ def apply_substitutions(model: Model, template_declarations: str, config: dict):
 
     return re.sub(r'<<([^>]+)>>', replace_fn, template_declarations)
 
-def write_model_declarations(
-        model: Model,
-        model_type: ModelType,
-        config: dict) -> str:
-    data_file = DECLARATION_TEMPLATE[model_type]
+def write_model_declarations(model: Model, config: dict) -> str:
+    data_file = DECLARATION_TEMPLATE
     template_declarations = data_file_contents(data_file)
     return apply_substitutions(model, template_declarations, config)
 
@@ -211,22 +203,15 @@ class RossaData(NamedTuple):
         sim_packets_at_node = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
         query_sim_packets_at_node = UppaalSegment(is_satisfied = True, formula_expr = sim_packets_at_node, values = packets_at_nodes, index = 0)
 
-        # Note: The new model does not have per-port buffers,
-        packets_at_ports: dict[str, Samples | None] = dict(overflow_samples)
-        queryValues = [f'totalPortBuffered({i})' for i in range(num_ports)]
-        packets_at_ports.update({key: None for key in queryValues})
-        sim_packets_at_port = f'simulate [#<={sim_steps}] {{gDidOverflow * {max_capacity}, {", ".join(queryValues)}}}'
-        query_sim_packets_at_port = UppaalSegment(is_satisfied = True, formula_expr = sim_packets_at_port, values = packets_at_ports, index = 1)
-
         latencies = [f'sampleLatency[{i}]' for i in range(num_flows)]
         sim_sampled_latencies = f'simulate [#<={sampling_steps};{sampling_count}] {{{", ".join(latencies)}}}'
-        query_sim_sampled_latency = UppaalSegment(is_satisfied = True, formula_expr=sim_sampled_latencies, values = {key: to_latency_samples(value, sampling_steps) for key, value in self.flow_samples.items()}, index = 2)
+        query_sim_sampled_latency = UppaalSegment(is_satisfied = True, formula_expr=sim_sampled_latencies, values = {key: to_latency_samples(value, sampling_steps) for key, value in self.flow_samples.items()}, index = 1)
         
         utilizations = [f'portUtilization({p})' for p in range(num_ports)]
         sim_port_utilization = f'simulate [#<={sim_steps}] {{{", ".join(utilizations)}}}'
-        query_sim_port_utilization = UppaalSegment(is_satisfied = True, formula_expr=sim_port_utilization, values = {key: to_samples(value) for key, value in self.port_utilizations.items()}, index = 3)
+        query_sim_port_utilization = UppaalSegment(is_satisfied = True, formula_expr=sim_port_utilization, values = {key: to_samples(value) for key, value in self.port_utilizations.items()}, index = 2)
 
-        return [query_sim_packets_at_node, query_sim_packets_at_port, query_sim_sampled_latency, query_sim_port_utilization]
+        return [query_sim_packets_at_node, query_sim_sampled_latency, query_sim_port_utilization]
 
 
 def parse_sim_output(data: str) -> list[UppaalSegment]:

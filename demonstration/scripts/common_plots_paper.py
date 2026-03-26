@@ -15,12 +15,14 @@ from rnetwork.uppaal import Samples, UppaalSegment
 class InstanceData:
     name: str
     segments: Sequence[UppaalSegment]
-    reschedule: bool = False
 
-plot_settings = {'png': {'scale': 0.5, 'file': 'png', 'legend': True}, 'pgf': {'scale': 0.16, 'file': 'pgf', 'legend': False}}
-plot_setting = plot_settings['png']  # Default to png
+plot_settings = {
+    'png': {'scale': 0.5, 'file': 'png', 'legend': True, 'fontsize': 10}, 
+    'pgf': {'scale': 0.149, 'file': 'pgf', 'legend': False, 'fontsize': 8}, 
+    'pdf': {'scale': 0.149, 'file': 'pdf', 'legend': False, 'fontsize': 8}
+}
 
-def get_fig_size():
+def get_fig_size(plot_setting):
     _FIG_SCALING = plot_setting['scale']
     _FIG_WIDTH = 24 * _FIG_SCALING
     _FIG_HEIGTH = 14 * _FIG_SCALING
@@ -108,17 +110,23 @@ def average(iterable, default=0):
         return default
     return total / count
 
-def mylegend(fig, anchor=(1, 0), loc="lower right", ncol=3, fontsize=10, **kwargs):
+def mylegend(fig, fontsize, anchor=(1, 0), loc="lower right", ncol=3, **kwargs):
     fig.legend(bbox_to_anchor=anchor, loc=loc, bbox_transform=fig.transFigure, ncol=ncol, fontsize=fontsize, **kwargs)
 
-def average_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path):
-    fig = plt.figure(figsize=get_fig_size())
+def plot_common(plot_setting, title, xlabel, ylabel):
+    fig = plt.figure(figsize=get_fig_size(plot_setting))
     ax = fig.add_subplot(111)
-    ax.set_title("Average Port Utilization", fontsize=10)
-    ax.set_xlabel("Phase", fontsize=10)
-    ax.set_ylabel("Utilization", fontsize=10)
-    ax.set_ylim(ymin=0, auto=True)
+    ax.set_title(title, fontsize=plot_setting['fontsize'])
+    ax.set_xlabel(xlabel, fontsize=plot_setting['fontsize'])
+    ax.set_ylabel(ylabel, fontsize=plot_setting['fontsize'])
+    ax.tick_params(axis='both', labelsize=plot_setting['fontsize'])
+    ax.autoscale(enable=True, axis='x', tight=True)
     ax.grid(True)
+    return fig, ax
+
+def average_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plot_setting):
+    fig, ax = plot_common(plot_setting, title="Average Port Utilization", xlabel="Phase", ylabel="Utilization")
+    ax.set_ylim(ymin=0, auto=True)
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
@@ -130,17 +138,13 @@ def average_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]],
         avgs = [sum(yvals) / num_samples for yvals in zip(*ys)]
         ax.plot(xvalues, avgs, label=line_names[name], color=line_colors[name])
     if plot_setting['legend']: 
-        mylegend(fig)
-    fig.savefig(output_path)
+        mylegend(fig, fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def maximum_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path):
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Port Utilization", fontsize=10)
-    ax.set_xlabel("Phase", fontsize=10)
-    ax.set_ylabel("Utilization", fontsize=10)
+def maximum_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plot_setting):
+    fig, ax = plot_common(plot_setting, title="Maximum Port Utilization", xlabel="Phase", ylabel="Utilization")
     ax.set_ylim(ymin=0.0, auto=True)
-    ax.grid(True)
+
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
@@ -151,43 +155,33 @@ def maximum_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]],
         avgs = [max(yvals) for yvals in zip(*ys)]
         ax.plot(xvalues, avgs, label=line_names[name], color=line_colors[name])
     if plot_setting['legend']:
-        mylegend(fig)
-    fig.savefig(output_path)
+        mylegend(fig, fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Latency of Flows (Ascending)", fontsize=10)
-    ax.set_xlabel("Flow (sorted by latency)", fontsize=10)
-    ax.set_ylabel("Time units", fontsize=10)
+def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
+    fig, ax = plot_common(plot_setting, title="Maximum Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
-    ax.grid(True)
     for name, segment in name_segments:
         assert(name in lines)
-        if (name not in lines[2:]): continue
+        if (name not in lines[1:]): continue
         # Each Expr is a particular flow
         # Multiple sample for each.
         # Sampling latency we just need the last heighest number.
         # Take maximum Y of each sample
-        flow_maximums = sorted(
+        flow_maximums = [0] + sorted(
             # Ignore unfinished samples.
             max((flow_sample[-1][1] for flow_sample in flow_samples if flow_sample is not None and flow_sample[-1][1] > 0), default=500) for flow_samples in segment.values.values()
         )
         ax.plot(list(range(len(flow_maximums))), flow_maximums, label=line_names[name], color=line_colors[name])
     if plot_setting['legend']:
-        mylegend(fig, anchor=(0, 1), loc="upper left")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=(0, 1), loc="upper left", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Average Latency of Flows (Ascending)", fontsize=10)
-    ax.set_xlabel("Flow (sorted by latency)", fontsize=10)
-    ax.set_ylabel("Time units", fontsize=10)
+def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
+    fig, ax = plot_common(plot_setting, title="Average Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
-    ax.grid(True)
     for name, segment in name_segments:
         assert(name in lines)
         # Each Expr is a particular flow
@@ -195,26 +189,21 @@ def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_p
         # Sampling latency we just need the last heighest number.
         # Then take average
         # Take maximum Y of each sample
-        flow_averages = sorted(
+        flow_averages = [0] + sorted(
             average((flow_sample[-1][1] for flow_sample in flow_samples if flow_sample is not None and flow_sample[-1][1] > 0), default=500) for flow_samples in segment.values.values()
         )
         ax.plot(list(range(len(flow_averages))), flow_averages, label=line_names[name], **line_styles[name])
     if plot_setting['legend']:
-        mylegend(fig, anchor=(0, 1), loc="upper left")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=(0, 1), loc="upper left", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def average_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
+def average_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Buffer Size of Nodes (Ascending)", fontsize=10)
-    ax.set_xlabel("Nodes (sorted by max buffer size)", fontsize=10)
-    ax.set_ylabel("Packets", fontsize=10)
+    fig, ax = plot_common(plot_setting, title="Average Buffer Size of Nodes (Ascending)", xlabel="Nodes (sorted by avg buffer size)", ylabel="Packets")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max']) # auto=True)
-    ax.grid(True)
     for name, segment in name_segments:
         assert(name in lines)
         # Extract data related to overflow line.
@@ -225,27 +214,22 @@ def average_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_pa
         # Get the data from the single sample for packetsAtNode(n) measurements, filtering out the overflow line.
         samples = [_samples[0] for key, _samples in segment.values.items() if key != overflow_key]
         # Take maximum Y of each node
-        node_maximums = sorted(
+        node_maximums = [0] + sorted(
             average((time_buffer_size[1] for time_buffer_size in node_sample)) for node_sample in samples
         )
         ax.plot(list(range(len(node_maximums))), node_maximums, label=line_names[name], linewidth=1, alpha=0.8, **line_styles[name])
     # ax.axhline(y=6000, color = line_colors['overflow'], linestyle=line_styles['overflow']['linestyle'])
     if plot_setting['legend']:
-        mylegend(fig, anchor=(0, 1), loc="upper left")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=(0, 1), loc="upper left", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def maximum_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
+def maximum_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Buffer Size of Nodes (Ascending)", fontsize=10)
-    ax.set_xlabel("Nodes (sorted by max buffer size)", fontsize=10)
-    ax.set_ylabel("Packets", fontsize=10)
+    fig, ax = plot_common(plot_setting, title="Maximum Buffer Size of Nodes (Ascending)", xlabel="Nodes (sorted by max buffer size)", ylabel="Packets")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max']) # auto=True)
-    ax.grid(True)
     for name, segment in name_segments:
         assert(name in lines)
         # Extract data related to overflow line.
@@ -256,14 +240,14 @@ def maximum_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_pa
         # Get the data from the single sample for packetsAtNode(n) measurements, filtering out the overflow line.
         samples = [_samples[0] for key, _samples in segment.values.items() if key != overflow_key]
         # Take maximum Y of each node
-        node_maximums = sorted(
+        node_maximums = [0] + sorted(
             max((time_buffer_size[1] for time_buffer_size in node_sample)) for node_sample in samples
         )
         ax.plot(list(range(len(node_maximums))), node_maximums, label=line_names[name], linewidth=1, alpha=0.8, **line_styles[name])
     # ax.axhline(y=6000, color = line_colors['overflow'], linestyle=line_styles['overflow']['linestyle'])
     if plot_setting['legend']:
-        mylegend(fig, anchor=(0, 1), loc="upper left")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=(0, 1), loc="upper left", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
 def find_name_segment(name: str, name_segments: Sequence[Tuple[str, UppaalSegment]]):
     for n, segment in name_segments:
@@ -271,18 +255,17 @@ def find_name_segment(name: str, name_segments: Sequence[Tuple[str, UppaalSegmen
             return segment
     return None
 
-def maximum_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
+def maximum_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Node Buffer Size over time", fontsize=10)
-    ax.set_xlabel("Phase", fontsize=10)
-    ax.set_ylabel("Packets", fontsize=10)
-    # ax.set_xticks(range(0, 1000, 5))
+    fig, ax = plot_common(plot_setting, title="Maximum Node Buffer Size over time", xlabel="Phase", ylabel="Packets")
+    # ax.set_xticks(range(0, 1000, 100))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max']) # auto=True)
-    ax.grid(True)
+    # ax.set_xlim(xmin=0.0, xmax=500)
+    ax.autoscale(enable=True, axis='x', tight=True)
+    # ax.tick_params(axis='x', labelsize=plot_setting['fontsize'])
+    # ax.tick_params(axis='y', labelsize='small') #, pad=-3)
     for name in lines:
       segment = find_name_segment(name, name_segments)
       if not segment is None:
@@ -306,21 +289,16 @@ def maximum_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]],
         # ax.plot(list(range(len(node_maximums))), node_maximums, label=name, linestyle=line_styles[name], color=line_colors[name])
     # ax.axhline(y=6000, color = line_colors['overflow'], linestyle=line_styles['overflow']['linestyle'])
     if plot_setting['legend']:
-        mylegend(fig, anchor=None, loc="upper right")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=None, loc="upper right", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
-def average_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting):
+def average_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     # Require only one sample per expression.
     for _name, segment in name_segments:
         ensure_one_sample_per_expression(segment)
-    fig = plt.figure(figsize=get_fig_size())
-    ax = fig.add_subplot(111)
-    ax.set_title("Maximum Node Buffer Size over time", fontsize=10)
-    ax.set_xlabel("Phase", fontsize=10)
-    ax.set_ylabel("Packets", fontsize=10)
+    fig, ax = plot_common(plot_setting, title="Average Node Buffer Size over time", xlabel="Phase", ylabel="Packets")
     # ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max']) # auto=True)
-    ax.grid(True)
     for name, segment in name_segments:
         assert(name in lines)
         # Extract data related to overflow line.
@@ -342,8 +320,8 @@ def average_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]],
         # ax.plot(list(range(len(node_maximums))), node_maximums, label=name, linestyle=line_styles[name], color=line_colors[name])
     # ax.axhline(y=6000, color = line_colors['overflow'], linestyle=line_styles['overflow']['linestyle'])
     if plot_setting['legend']:
-        mylegend(fig, anchor=(0, 1), loc="upper left")
-    fig.savefig(output_path)
+        mylegend(fig, anchor=(0, 1), loc="upper left", fontsize=plot_setting['fontsize'])
+    fig.savefig(output_path, bbox_inches='tight')
 
 def make_legend(lines, loc="lower right", ncol=1, lgd_alpha = 0.8):
     ax = plt.gca()
@@ -355,7 +333,7 @@ def make_legend(lines, loc="lower right", ncol=1, lgd_alpha = 0.8):
     fr.set_alpha(lgd_alpha)
     fr.set_edgecolor('black')
     return lg
-def make_legend_to_file(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, ncol=5):
+def make_legend_to_file(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plot_setting, ncol=5):
     plot_lines = []
     for name in ['fixed_fewest', 'fixed_quickest', 'valiant_quickest', 'rotorlb', 'rotorlb_quickest']:
         segment = find_name_segment(name, name_segments)
@@ -382,7 +360,7 @@ def make_legend_to_file(name_segments: Sequence[Tuple[str, UppaalSegment]], outp
     legend_fig, legend_ax = plt.subplots(figsize=(legend_bbox.width, legend_bbox.height))
 
     # Recreate the legend on the separate figure/axis
-    lgs = legend_ax.legend(handles=plot_lines, bbox_to_anchor=(0, 0, 1, 1), bbox_transform=legend_fig.transFigure, fontsize=10,
+    lgs = legend_ax.legend(handles=plot_lines, bbox_to_anchor=(0, 0, 1, 1), bbox_transform=legend_fig.transFigure, fontsize=plot_setting['fontsize'],
                             ncol=ncol, fancybox=True, shadow=True, columnspacing=1.5, labelspacing=0.2, handlelength=2.5)
     # Remove everything else from the legend's figure
     legend_ax.axis('off')
@@ -394,31 +372,30 @@ def make_legend_to_file(name_segments: Sequence[Tuple[str, UppaalSegment]], outp
     # fig.savefig(output_path)
 
 
-def plot(instance_datas: Sequence[InstanceData], output_folder, plotting):
+def plot(instance_datas: Sequence[InstanceData], output_folder, plotting, plot_setting):
     # Indices
     # 0: packetsAtNode + overflow
-    # 1: totalPortBuffered + overflow
-    # 2: sampleLatency [multiple samples]
-    # 3: portUtilization
+    # 1: sampleLatency [multiple samples]
+    # 2: portUtilization
     file_suffix = plot_setting['file']
 
     average_port_utilization(
-        [(inst.name, inst.segments[3]) for inst in instance_datas], output_folder / f"avg_port_utilization.{file_suffix}"
+        [(inst.name, inst.segments[2]) for inst in instance_datas], output_folder / f"avg_port_utilization.{file_suffix}", plot_setting = plot_setting
     )
     maximum_port_utilization(
-        [(inst.name, inst.segments[3]) for inst in instance_datas], output_folder / f"max_port_utilization.{file_suffix}"
+        [(inst.name, inst.segments[2]) for inst in instance_datas], output_folder / f"max_port_utilization.{file_suffix}", plot_setting = plot_setting
     )
-    # Latency for rescheduled instances messes with the sampling, so they are excluded
-    maximum_latency([(inst.name, inst.segments[2]) for inst in instance_datas if not inst.reschedule], output_folder / f"max_latencies.{file_suffix}", plotting=plotting)
-    average_latency([(inst.name, inst.segments[2]) for inst in instance_datas if not inst.reschedule], output_folder / f"avg_latencies.{file_suffix}", plotting=plotting)
-    
-    maximum_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"max_buffer.{file_suffix}", plotting=plotting)
-    average_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"avg_buffer.{file_suffix}", plotting=plotting)
 
-    maximum_buffer_over_time([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"max_buffer_over_time.{file_suffix}", plotting=plotting)
-    average_buffer_over_time([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"avg_buffer_over_time.{file_suffix}", plotting=plotting)
+    maximum_latency([(inst.name, inst.segments[1]) for inst in instance_datas], output_folder / f"max_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    average_latency([(inst.name, inst.segments[1]) for inst in instance_datas], output_folder / f"avg_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
     
-    make_legend_to_file([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"legend.{file_suffix}")
+    maximum_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"max_buffer.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    average_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"avg_buffer.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+
+    maximum_buffer_over_time([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"max_buffer_over_time.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    average_buffer_over_time([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"avg_buffer_over_time.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    
+    make_legend_to_file([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"legend.{file_suffix}", plot_setting = plot_setting)
 
 
 class CommonPlots(cli.Application):
@@ -428,10 +405,15 @@ class CommonPlots(cli.Application):
     output_dir = cli.SwitchAttr(["--output-dir"], str, default=".")
     quiet = cli.Flag(["--quiet"], default=False, help="Hide output from the script itself")
     pgf = cli.Flag(["--pgf"], default=False, help="Output plots as PGF instead of PNG")
-    if pgf:
-        plot_setting = plot_settings['pgf']
+    pdf = cli.Flag(["--pdf"], default=False, help="Output plots as PDF")
 
     def main(self):
+        plot_setting = plot_settings['png']  # Default to png
+        if self.pgf:
+            plot_setting = plot_settings['pgf']
+        elif self.pdf:
+            plot_setting = plot_settings['pdf']
+
         self.base = local.path(self.output_dir)
 
         with open(self.base / "instances.toml", "rb") as f:
@@ -439,9 +421,9 @@ class CommonPlots(cli.Application):
 
         plotting = data["plotting"]
 
-        schedulers = [(c["folder_name"], self.base / c["folder_name"], c["reschedule"]) for c in data["instance"]]
+        schedulers = [(c["folder_name"], self.base / c["folder_name"]) for c in data["instance"]]
         datas = []
-        for s, f, is_reschedule in schedulers:
+        for s, f in schedulers:
             segments_path = f / "segments.json"
             self._out(segments_path)
             try:
@@ -449,9 +431,9 @@ class CommonPlots(cli.Application):
             except:
                 self._out(f"Error reading from {segments_path}", is_error=True)
                 continue
-            data = InstanceData(name=s, segments=segments, reschedule=is_reschedule)
+            data = InstanceData(name=s, segments=segments)
             datas.append(data)
-        plot(datas, output_folder=self.base, plotting=plotting)
+        plot(datas, output_folder=self.base, plotting=plotting, plot_setting=plot_setting)
 
     def _read_segments(self, path):
         with open(path, "r") as f:
