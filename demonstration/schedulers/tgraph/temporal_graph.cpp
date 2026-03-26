@@ -3,22 +3,23 @@
 #include "ext.hpp"
 #include "temporal_graph.hpp"
 
-const int NUM_PHASES = 4;
-const int NUM_NODES = 5;
-const int NUM_FLOWS = 5;
-const int NUM_SWITCHES = 2;
-const int NUM_PORTS = NUM_NODES * NUM_SWITCHES;
 
-const node_t TOPOLOGY[NUM_PHASES][NUM_PORTS] = {
-    {1, 3, 2, 4, 3, 0, 4, 1, 0, 2},
-    {2, 4, 3, 0, 4, 1, 0, 2, 1, 3},
-    {3, 1, 4, 2, 0, 3, 1, 4, 2, 0},
-    {4, 2, 0, 3, 1, 4, 2, 0, 3, 1}};
 
 namespace tg
 {
     Topology fromTestData()
     {
+        const int NUM_PHASES = 4;
+        const int NUM_NODES = 5;
+        const int NUM_SWITCHES = 2;
+        const int NUM_PORTS = NUM_NODES * NUM_SWITCHES;
+
+        const node_t TOPOLOGY[NUM_PHASES][NUM_PORTS] = {
+            {1, 3, 2, 4, 3, 0, 4, 1, 0, 2},
+            {2, 4, 3, 0, 4, 1, 0, 2, 1, 3},
+            {3, 1, 4, 2, 0, 3, 1, 4, 2, 0},
+            {4, 2, 0, 3, 1, 4, 2, 0, 3, 1}};
+
         Topology tp;
         tp.num_phases = NUM_PHASES;
         tp.num_switches = NUM_SWITCHES;
@@ -117,7 +118,7 @@ namespace tg
         {
             for (int32_t port = 0; port < topology.num_ports(); ++port)
             {
-                node_t owner = topology.owner(port);
+                node_t owner = topology.port_owner(port);
                 auto vFrom = vPN[pnIndex(phase, owner)];
                 for (int32_t waitTime=0; waitTime < topology.num_phases; ++waitTime) {
                     auto targetPhase = phaseAdd(phase, waitTime);

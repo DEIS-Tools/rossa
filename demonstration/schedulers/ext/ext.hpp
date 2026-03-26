@@ -21,50 +21,31 @@ struct Flow {
     node_t egress;   // Node they will egress at.
 };
 
-struct Parameters {
+struct Topology {
     int32_t num_phases = 0;
     int32_t num_nodes = 0;
-    int32_t num_flows = 0;
     int32_t num_switches = 0;
     // For the following two variables var,
     // var[i] refers to a port.
     std::vector<packet_t> capacities = {};
     std::vector<packet_t> bandwidths = {};
 
-    [[nodiscard]] constexpr switch_t num_ports() const { return num_switches * num_nodes; }
-    [[nodiscard]] constexpr port_t port_of(node_t node, switch_t sw) const { return node * num_switches+ sw; }
-    [[nodiscard]] constexpr node_t port_owner(port_t port) const { return port / num_switches; }
-
-    // Internal use.
-    void resizeLimits() {
-        capacities.resize(num_nodes);
-        bandwidths.resize(num_ports());
-    }
-};
-
-struct Topology {
-    int32_t num_phases = 0;
-    int32_t num_switches = 0;
-    int32_t num_nodes = 0;
+    // stores at
+    // node_t = topology[phase * NUM_PORTS + port]
+    std::vector<node_t> topology;
 
     Topology() = default;
-    explicit Topology(const Parameters& parameters)
-    : num_phases(parameters.num_phases), num_switches(parameters.num_switches), num_nodes(parameters.num_nodes) {}
+    Topology(int32_t num_phases, int32_t num_nodes, int32_t num_switches)
+    : num_phases(num_phases), num_nodes(num_nodes), num_switches(num_switches) {}
 
     [[nodiscard]] constexpr switch_t num_ports() const { return num_switches * num_nodes; }
-
-    // Returns a reference to the node that is the target
-    // of the port in the given phase.
-    node_t &operator()(phase_t phase, port_t port) {
-        return topology[phase * num_ports() + port];
-    }
-
+    [[nodiscard]] constexpr port_t port_of(node_t node, switch_t sw) const { return node * num_switches + sw; }
     // Returns the node that owns the port.
-    node_t owner(port_t port) const {
-        return port / num_switches;
-    }
-    constexpr port_t port_of(node_t node, switch_t sw) const {
-        return node * num_switches + sw;
+    [[nodiscard]] constexpr node_t port_owner(port_t port) const { return port / num_switches; }
+
+    // Returns the node (id) that is the target of the port in the given phase.
+    node_t operator()(phase_t phase, port_t port) {
+        return topology[phase * num_ports() + port];
     }
 
     port_t next_port_to(node_t src_node, node_t dst_node, phase_t current_phase);
@@ -75,21 +56,12 @@ struct Topology {
         std::copy(targets, targets + num_ports(), &topology[phase * num_ports()]);
     }
 
-    // void pushOwners(const node_t *const owners) {
-    //     std::copy(owners, owners + num_ports, portOwner.begin());
-    // }
-
     void resizeLimits() {
+        capacities.resize(num_nodes);
+        bandwidths.resize(num_ports());
         topology.clear();
         topology.resize(num_phases * num_ports());
-        // portOwner.clear();
-        // portOwner.resize(num_ports);
     }
-
-    // stores at
-    // node_t = topology[phase * NUM_PORTS + port]
-    std::vector<node_t> topology;
-    // std::vector<node_t> portOwner;
 };
 
 struct Buffers {
@@ -105,8 +77,8 @@ struct Buffers {
         return values_[node * flows_ + flow];
     };
 
-    void pushBuffers(node_t node, const packet_t *data);
-    void pushAllBuffers(const packet_t *data);
+    void pushBuffers(node_t node, const packet_t* data);
+    void pushAllBuffers(const packet_t* data);
 
     void fill(packet_t value = 0) {
         std::fill(values_.begin(), values_.end(), value);
@@ -131,10 +103,11 @@ private:
 };
 
 struct Network {
-    Parameters parameters;
-    Buffers buffers;
-    std::vector<Flow> flows;
     Topology topology;
+    std::vector<Flow> flows;
+    Buffers buffers;
+
+    [[nodiscard]] flow_t num_flows() const { return flows.size(); }
 };
 
 extern Network network;
@@ -143,11 +116,11 @@ extern Network network;
 extern "C" {
 // Core interface
 void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,
-                    const int32_t *node_capacities, const int32_t *port_bandwidth);
-void extPushTopology(phase_t phase_i, const node_t *targets);
-void extPushFlow(int32_t i, node_t ingress, node_t egress);
+                    const packet_t* node_capacities, const packet_t* port_bandwidth);
+void extPushTopology(phase_t phase, const node_t *targets);
+void extPushFlow(flow_t flow, node_t ingress, node_t egress);
 void extSchedulerInit(); // Called before each query. Calls scheduler_init()
-void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_t* schedule_choice_output);
+void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, int32_t* schedule_choice_output);
 }
 #endif
 
@@ -155,34 +128,9 @@ void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_
 // Called before each UPPAAL query is run.
 void init_scheduler();
 
-// Called once for each simulation step before calls to customGetScheduleChoice is made.
+// Called once for each simulation step before calls to get_scheduler_choice is made.
 void prepare_scheduler_choices();
 
-// Called (perhaps multiple times) each simulation step, for all node, flow and switch combinations in the current phase.
-// REQUIREMENT: Between calls to prepare_scheduler_choices this function must yield the same result for the same arguments
-packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw);
-
-struct PortLoad {
-
-    static packet_t getPacketsForFlow(node_t node, flow_t flow) {
-        return network.buffers(node, flow);
-    }
-
-    static packet_t getPackets(node_t node) {
-        packet_t total = 0;
-        for (flow_t f = 0; f < network.parameters.num_flows; ++f) {
-            total += network.buffers(node, f);
-        }
-        return total;
-    }
-    // static packet_t getTotalPortLoad(port_t port) {
-    //     // FIXME: In the new model, the notion of port load does not exists. The node has a single queue.
-    //     //        For now we pretend node load is uniformly distributed across the "ports", so the capacity-based schedulers can still compile.
-    //     return getLoad(network.topology.owner(port)) / network.parameters.num_switches;
-    // }
-
-    // Returns the fraction of packets buffered at this node compared to its capacity.
-    static double getLoad(node_t node) {
-        return static_cast<double>(getPackets(node)) / network.parameters.capacities[node];
-    }
-};
+// Called each simulation step, for all node, flow and switch combinations in the current phase.
+// REQUIREMENT: Calls to get_scheduler_choice must be deterministic given the function parameters as well as the content of network
+int32_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw);

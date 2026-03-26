@@ -42,25 +42,22 @@ phase_t Topology::phase_offset_next_connection(node_t src_node, node_t dst_node,
 }
 
 void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,
-                    const int32_t *node_capacities, const int32_t *port_bandwidth) {
-    network.parameters = Parameters{num_phases, num_nodes, num_flows, num_switches};
-    network.parameters.resizeLimits();
+                    const packet_t* node_capacities, const packet_t* port_bandwidth) {
+    network.topology = Topology(num_phases, num_nodes, num_switches);
+    network.topology.resizeLimits();
     network.flows.resize(num_flows);
     network.buffers = Buffers(num_nodes, num_flows);
 
-    network.topology = Topology(network.parameters);
-    network.topology.resizeLimits();
-
     for (node_t node = 0; node < num_nodes; ++node) {
-        network.parameters.capacities[node] = node_capacities[node];
+        network.topology.capacities[node] = node_capacities[node];
     }
-    for (port_t port = 0; port < network.parameters.num_ports(); ++port) {
-        network.parameters.bandwidths[port] = port_bandwidth[port];
+    for (port_t port = 0; port < network.topology.num_ports(); ++port) {
+        network.topology.bandwidths[port] = port_bandwidth[port];
     }
 }
 
-void extPushTopology(phase_t phase_i, const node_t* targets) {
-    network.topology.pushTopology(phase_i, targets);
+void extPushTopology(phase_t phase, const node_t* targets) {
+    network.topology.pushTopology(phase, targets);
 }
 
 void extSchedulerInit() {
@@ -68,17 +65,17 @@ void extSchedulerInit() {
     init_scheduler();
 }
 
-void extPushFlow(int32_t i, node_t ingress, node_t egress) {
-    network.flows[i] = Flow{ingress, egress};
+void extPushFlow(flow_t flow, node_t ingress, node_t egress) {
+    network.flows[flow] = Flow{ingress, egress};
 }
 
-void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, packet_t* schedule_choice_output) {
+void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, int32_t* schedule_choice_output) {
     network.buffers.pushAllBuffers(buffer_data);
     prepare_scheduler_choices();
     int i = 0;
-    for (node_t node = 0; node < network.parameters.num_nodes; ++node) {
-        for (flow_t flow = 0; flow < network.parameters.num_flows; ++flow) {
-            for (int sw = -1; sw < network.parameters.num_switches; ++sw) {
+    for (node_t node = 0; node < network.topology.num_nodes; ++node) {
+        for (flow_t flow = 0; flow < network.num_flows(); ++flow) {
+            for (int sw = -1; sw < network.topology.num_switches; ++sw) {
                 schedule_choice_output[i] = get_scheduler_choice(node, flow, phase, sw);
                 i++;
             }

@@ -153,7 +153,7 @@ public:
     }
     struct Offer {
         Offer(const RotorLbTable& parent, port_t port, node_t target)
-        : offer(parent.n_nodes_), capacity(network.parameters.bandwidths[port]), source(parent.local_), target(target) {}
+        : offer(parent.n_nodes_), capacity(network.topology.bandwidths[port]), source(parent.local_), target(target) {}
         std::vector<packet_t> offer;
         packet_t capacity;
         node_t source;
@@ -211,7 +211,7 @@ public:
             for (const node_t source : views::iota(0, n_nodes_)) {
                 remaining_traffic += traffic(source, destination);
             }
-            packet_t available = network.parameters.bandwidths[network.topology.next_port_to(local_, destination, phase_i)] - remaining_traffic;
+            packet_t available = network.topology.bandwidths[network.topology.next_port_to(local_, destination, phase_i)] - remaining_traffic;
             destination_capacity[destination] = available >= 0 ? available : 0;
         }
 
@@ -296,7 +296,7 @@ public:
 
             // If the targets in total accept more traffic than we have, prioritize sending to targets that sooner has connection to the destination.
             std::ranges::sort(options, std::less<phase_t>(), [](const auto& e){ return e.second; });
-            packet_t buffered = PortLoad::getPacketsForFlow(source, flow);
+            packet_t buffered = network.buffers(source, flow);
             phase_t last_offset = -1;
             std::vector<PortWeight> options_with_same_offset;
             auto handle_equal_priority_options = [&buffered, &scheduler_choice](const std::vector<PortWeight>& equal_priority_options) -> bool {
@@ -348,21 +348,18 @@ private:
 };
 
 void compute_rotor_lb(phase_t phase_i) {
-    auto const& params = network.parameters;
-
     std::vector<RotorLbTable> tables;
     std::vector<std::vector<RotorLbTable::Offer>> offers;
-    tables.reserve(params.num_nodes);
+    tables.reserve(network.topology.num_nodes);
     // Build tables from port load data
-    for (const node_t node : views::iota(0, params.num_nodes)) {
-        auto& table = tables.emplace_back(params.num_nodes, node);
-        for (const switch_t sw : views::iota(0, params.num_switches)) {
+    for (const node_t node : views::iota(0, network.topology.num_nodes)) {
+        auto& table = tables.emplace_back(network.topology.num_nodes, node);
+        for (const switch_t sw : views::iota(0, network.topology.num_switches)) {
             port_t port = network.topology.port_of(node, sw);
             node_t target = network.topology(phase_i, port);
             table.add_target(target, port);
-            for (const flow_t flow : views::iota(0, params.num_flows)) {
-                packet_t load = PortLoad::getPacketsForFlow(node, flow);
-                table(flow) = load;
+            for (const flow_t flow : views::iota(0, network.num_flows())) {
+                table(flow) = network.buffers(node, flow);
             }
         }
         offers.emplace_back(table.get_offer());
@@ -372,8 +369,8 @@ void compute_rotor_lb(phase_t phase_i) {
         table.accept_offers(offers, phase_i);
     }
     // Convert accepted offers to scheduling choices
-    for (const node_t node : views::iota(0, params.num_nodes)) {
-        for (const flow_t flow : views::iota(0, params.num_flows)) {
+    for (const node_t node : views::iota(0, network.topology.num_nodes)) {
+        for (const flow_t flow : views::iota(0, network.num_flows())) {
             (*pChoiceCache)[{node, flow}] = tables[node].get_choice(flow, offers, phase_i);
         }
     }
@@ -391,13 +388,12 @@ packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_
         iter = pChoiceCache->find(key);
     }
     auto& choice = iter->second;
-    const port_t port = sw == -1 ? -1 : network.parameters.port_of(node, sw);
+    const port_t port = sw == -1 ? -1 : network.topology.port_of(node, sw);
     auto port_choice = std::ranges::find(choice, port, [](const auto& pw){ return pw.port; });
     return port_choice == choice.end() ? 0 : port_choice->weight;
 }
 
 void prepare_scheduler_choices() {
-    // random_num = random_gen();
     pChoiceCache->clear();
 }
 void init_scheduler() {
@@ -405,5 +401,4 @@ void init_scheduler() {
         readEnvVars();
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, SchedulerChoice>>();
     }
-    // random_gen = std::mt19937(123456);
 }

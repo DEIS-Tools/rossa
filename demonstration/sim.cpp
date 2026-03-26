@@ -28,7 +28,6 @@ double random(double max) {
 /*** MODEL ***/
 constexpr int NUM_PHASES = ROSSA_NUM_PHASES;
 constexpr int NUM_NODES = ROSSA_NUM_NODES;
-// constexpr int MAX_FLOWS = NUM_NODES * NUM_NODES;
 constexpr int NUM_FLOWS = ROSSA_NUM_FLOWS;
 constexpr int MAX_FLOW_TIME = ROSSA_MAX_FLOW_TIME;
 constexpr int NUM_SWITCHES = ROSSA_NUM_SWITCHES;

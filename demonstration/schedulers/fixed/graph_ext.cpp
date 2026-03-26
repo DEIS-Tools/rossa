@@ -98,10 +98,8 @@ void computeToDestination(node_t destination) {
             .predecessor_map(make_iterator_property_map(p.begin(), get(vertex_index, g)))
             .distance_map(make_iterator_property_map(d.begin(), get(vertex_index, g))));
 
-    auto const& params = network.parameters;
-
-    for (phase_t i=0; i < params.num_phases; ++i) {
-        for (node_t from_node=0; from_node < params.num_nodes; ++from_node) {
+    for (phase_t i=0; i < network.topology.num_phases; ++i) {
+        for (node_t from_node=0; from_node < network.topology.num_nodes; ++from_node) {
             switch_t any_switch = 0;
             port_t port = tgGraph->topology.port_of(from_node, any_switch);
             phase_t phase = tgGraph->phaseAdd(i, 1);
@@ -137,7 +135,7 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, int32_t f
 
 packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     auto choice = cachedChoice(phase_i, node, flow);
-    if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) {
+    if (phase_i == choice.phase && network.topology.port_of(node, sw) == choice.port) {
         return 1;
     } else {
         return 0;
@@ -150,7 +148,6 @@ void init_scheduler() {
     if (!tgGraph) {
         readEnvVars();
         tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);
-        pChoiceCache =
-            std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
+        pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
     }
 }

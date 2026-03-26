@@ -96,10 +96,8 @@ void computeToDestination(node_t destination) {
             .predecessor_map(make_iterator_property_map(p.begin(), get(vertex_index, g)))
             .distance_map(make_iterator_property_map(d.begin(), get(vertex_index, g))));
 
-    auto const& params = network.parameters;
-
-    for (phase_t i=0; i < params.num_phases; ++i) {
-        for (node_t from_node=0; from_node < params.num_nodes; ++from_node) {
+    for (phase_t i=0; i < network.topology.num_phases; ++i) {
+        for (node_t from_node=0; from_node < network.topology.num_nodes; ++from_node) {
             switch_t any_switch = 0;
             port_t port = tgGraph->topology.port_of(from_node, any_switch);
             phase_t phase = tgGraph->phaseAdd(i, 1);
@@ -135,12 +133,12 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
 packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     if (network.flows[flow].ingress == node) {
         // Random via point among immediately available nodes (send to a random switch).
-        const auto random_switch = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.parameters.num_switches));
+        const auto random_switch = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.topology.num_switches));
         if (random_switch == sw) return 1;
     } else {
         // Quickest to egress
         auto choice = cachedChoice(phase_i, node, network.flows[flow].egress);
-        if (phase_i == choice.phase && network.parameters.port_of(node, sw) == choice.port) return 1;
+        if (phase_i == choice.phase && network.topology.port_of(node, sw) == choice.port) return 1;
     }
     return 0;
 }
