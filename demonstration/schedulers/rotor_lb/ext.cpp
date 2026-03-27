@@ -380,7 +380,7 @@ void compute_rotor_lb(phase_t phase_i) {
 // non-local data per source and destination
 // = table per node of traffic enqueued per (source,destination)-pair except diagonal and self-destination.
 
-packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
+packet_t scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     auto key = ChoiceArgs{node, flow};
     auto iter = pChoiceCache->find(key);
     if (iter == pChoiceCache->end()) {

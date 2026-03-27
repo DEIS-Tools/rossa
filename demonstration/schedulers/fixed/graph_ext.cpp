@@ -133,7 +133,7 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, int32_t f
     return iter->second;
 }
 
-packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
+packet_t scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     auto choice = cachedChoice(phase_i, node, flow);
     if (phase_i == choice.phase && network.topology.port_of(node, sw) == choice.port) {
         return 1;

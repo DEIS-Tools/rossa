@@ -130,7 +130,7 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
     return iter->second;
 }
 
-packet_t get_scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
+packet_t scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
     if (network.flows[flow].ingress == node) {
         // Random via point among immediately available nodes (send to a random switch).
         const auto random_switch = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.topology.num_switches));
