@@ -23,23 +23,16 @@ cp $BUILD_PATH/valiant/libvaliant.so .
 # Run demonstration
 DEMONSTRATION_FOLDER=./instances
 
-# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_1 --force --fast
-# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_1
-# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_2 --force --fast
-# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_2
-
-# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_3 --force --fast
-# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_3
-# python scripts/run_instances.py --num-workers 4 --directory $DEMONSTRATION_FOLDER/paper_4 --force --fast
-# python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_4
-
-# PGF="--pgf"
-PGF=""
-# FAST="--fast"
+# PGF=""
+# PGF="--pdf"
+PGF="--pgf"
 FAST=""
+# FAST="--fast"
 
-python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/paper_5 --force $PGF $FAST #--num-workers 4 
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_5 $PGF
+python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/example --force $PGF $FAST
 
-python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/paper_6 --force $PGF $FAST  # --num-workers 4
-python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/paper_6 $PGF
+python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/experiment_1 --force $PGF $FAST # --num-workers 4 
+python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/experiment_1 $PGF
+
+python scripts/run_instances.py --directory $DEMONSTRATION_FOLDER/experiment_2 --force $PGF $FAST # --num-workers 4
+python scripts/common_plots_paper.py --output-dir $DEMONSTRATION_FOLDER/experiment_2 $PGF

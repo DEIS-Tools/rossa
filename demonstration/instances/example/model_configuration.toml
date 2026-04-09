@@ -1,0 +1,29 @@
+[random]
+seed = 0
+
+[model]
+num_nodes = 4
+num_switches = 2
+bandwidth = 100
+capacity = 1000
+
+[flow]
+# Use the file if it exists
+traffic_file="instances/example/example-uniform-flows"
+# Otherwise, generate traffic using these parameters, then write it to the file
+type = "uniform"
+min_demand = 1
+max_demand = 50
+num_flows = 8
+
+[topology]
+topology_file="instances/example/example-topology"
+
+[query]
+sim_steps = 500         # Number of simulation steps for simulation queries.
+sampling_steps = 300    # Number of simulation steps for the packet sampling queries.
+sampling_count = 50     # Number of samples taken for the packet sampling queries.
+query_sim_packets_at_node = true
+query_sim_sampled_latency = true
+query_sim_port_utilization = true
+

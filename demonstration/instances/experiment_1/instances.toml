@@ -1,32 +1,30 @@
 [plotting]
-packet_max = 6100
-latency_max = 40
+packet_max = 5000
+latency_max = 20
 
 
 [[instance]]
 extension_name = "libfixed.so"
 folder_name = "fixed_fewest"
-reschedule = false
+modes = ["simulation", "verification"]
 [instance.envs]
 CHOICE_APPROACH = "FEWEST_HOPS"
 
 [[instance]]
 extension_name = "libfixed.so"
 folder_name = "fixed_quickest"
-reschedule = false
+modes = ["simulation", "verification"]
 [instance.envs]
 CHOICE_APPROACH = "QUICKEST"
 
 [[instance]]
 extension_name = "libvaliant.so"
 folder_name = "valiant_quickest"
-reschedule = false
+modes = ["simulation", "smc"]
 
 [[instance]]
 extension_name = "librotor_lb.so"
 folder_name = "rotorlb"
-reschedule = false
+modes = ["simulation", "verification"]
 [instance.envs]
 CHOICE_APPROACH = "UNIFORM"
-
-
