@@ -1,7 +1,9 @@
 from collections import namedtuple, defaultdict
 from typing import Any, Optional, Sequence, NamedTuple
+import json
+import os
 
-__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches", "Rotornet2024Switches", "RotorNetLowLatency"]
+__all__ = ["Flow", "ScheduleChoice", "Node", "Port", "RotatingSwitches", "Rotornet2024Switches", "RotorNetLowLatency", "FileTopologyBuilder"]
 
 ScheduleChoice = namedtuple("ScheduleChoice", ["port", "phase"])
 
@@ -88,6 +90,9 @@ class Model:
     @topology.setter
     def topology(self, value):
         self._topology = value
+
+    def to_json_file_format(self):
+        return [[[self.topology[phase][switch + node * self.num_switches] for node in range(self.num_nodes)] for switch in range(self.num_switches)] for phase in range(self.num_phases)]
 
 
 class Schedule(defaultdict):
@@ -268,6 +273,29 @@ class RotorNetLowLatency:
             ]
             topology.append(matching)
         return topology
+
+class FileTopologyBuilder:
+    def __init__(self, num_switches, topology_file):
+        self.num_switches = num_switches
+        assert(os.path.isfile(topology_file))
+        self.file_path = topology_file
+    
+    def get_topology(self, model: Model) -> Sequence[Sequence[int]]:
+        num_nodes = model.num_nodes
+        topology = []
+        with open(self.file_path, "r") as file:
+            topo_json = json.load(file)
+            for phase_json in topo_json:
+                assert(len(phase_json) == self.num_switches)
+                matching = [
+                    # Select target for each port for each node.
+                    phase_json[switch][node]
+                    for node in range(num_nodes)
+                    for switch in range(self.num_switches)
+                ]
+                topology.append(matching)
+        return topology
+
 
 def topo_to_pairings(model: Model):
     num_switches = model.num_ports // model.num_nodes

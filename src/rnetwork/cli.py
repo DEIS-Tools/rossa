@@ -9,7 +9,7 @@ import tempfile
 
 import tomli
 from . import uppaal, plotting, cppsim
-from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches, RotorNetLowLatency
+from .model import Flow, Model, RotatingSwitches, Rotornet2024Switches, RotorNetLowLatency, FileTopologyBuilder
 from plumbum import cli, colors, local
 
 # import plotting
@@ -145,7 +145,7 @@ _CONFIG_TOPOLOGY_BUILDERS = {
 }
 
 
-def parse_config(config) -> tuple[UniformFlowBuilder | GravityFlowBuilder | FileFlowBuilder, RotatingSwitches | Rotornet2024Switches | RotorNetLowLatency]:
+def parse_config(config) -> tuple[UniformFlowBuilder | GravityFlowBuilder | FileFlowBuilder, RotatingSwitches | Rotornet2024Switches | RotorNetLowLatency | FileTopologyBuilder]:
     """Parses config file returns components for UPPAAL model construction or raises exception"""
     errors = []
 
@@ -156,18 +156,18 @@ def parse_config(config) -> tuple[UniformFlowBuilder | GravityFlowBuilder | File
     traffic_file = config["flow"]["traffic_file"] if "traffic_file" in config["flow"] else None
     if traffic_file is None or not os.path.isfile(traffic_file):
         enum_check(
+            config["flow"]["type"],
+            _CONFIG_FLOW_BUILDERS.keys(),
+            "Flow type must be one of {valid_values}",
+        )
+
+    topology_file = config["topology"]["topology_file"] if "topology_file" in config["topology"] else None
+    if topology_file is None or not os.path.isfile(topology_file):
+        enum_check(
             config["topology"]["type"],
             _CONFIG_TOPOLOGY_BUILDERS.keys(),
             "Topology type must be one of {valid_values}",
         )
-
-    # topology_file = config["topology"]["topology_file"]
-    # if not os.path.isfile(topology_file):
-    enum_check(
-        config["flow"]["type"],
-        _CONFIG_FLOW_BUILDERS.keys(),
-        "Flow type must be one of {valid_values}",
-    )
 
     if errors:
         raise BadConfigException(errors)
@@ -175,11 +175,14 @@ def parse_config(config) -> tuple[UniformFlowBuilder | GravityFlowBuilder | File
     if traffic_file is None or not os.path.isfile(traffic_file):
         flow_builder = _CONFIG_FLOW_BUILDERS[config["flow"]["type"]](**config["flow"])
     else:
-        flow_builder = FileFlowBuilder(traffic_file=config["flow"]["traffic_file"])
+        flow_builder = FileFlowBuilder(traffic_file=traffic_file)
     
-    topology_builder = _CONFIG_TOPOLOGY_BUILDERS[config["topology"]["type"]](
-        num_switches=config["model"]["num_switches"], **config["topology"]
-    )
+    if topology_file is None or not os.path.isfile(topology_file):
+        topology_builder = _CONFIG_TOPOLOGY_BUILDERS[config["topology"]["type"]](
+            num_switches=config["model"]["num_switches"], **config["topology"]
+        )
+    else:
+        topology_builder = FileTopologyBuilder(num_switches=config["model"]["num_switches"], topology_file=topology_file)
 
     return flow_builder, topology_builder
 
@@ -310,6 +313,9 @@ class RotorGenerate(cli.Application, OutputMixin):
 
         # Add topology based on switches
         model.topology = topo_builder.get_topology(model)
+        if topo_builder is not FileTopologyBuilder and "topology_file" in self.config["topology"]:
+            with open(self.config["topology"]["topology_file"], "w") as file:
+                json.dump(model.to_json_file_format(), file)
 
         # Add flows
         flows = flow_builder.make_flows(model, random=random)
@@ -455,7 +461,7 @@ class RotorRun(cli.Application, OutputMixin):
         verifyta = local["verifyta"]
         # We omit these from console output
         secret_arguments = ["--key", self.uppaal_key]
-        extra_arguments = []
+        extra_arguments = [] # ["--upper-delta", "0.001"]
         public_args = extra_arguments + [model_path]
         self.diagnostics(f'Running verifyta with arguments: {" ".join(public_args)}')
         exit_code, sout, serr = verifyta[secret_arguments + public_args].run(retcode=None)
