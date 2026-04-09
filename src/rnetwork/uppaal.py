@@ -113,12 +113,14 @@ def write_verification_file(model: Model, config: dict, ext_name: str, statistic
     if statistical:
         query_config = config.get("query", dict())
         smc_steps = query_config.get('smc_steps', 50)
-        smc_probability = query_config.get('smc_probability', 0.5)
         max_capacity = max(n.capacity for n in model.nodes)
-        formulas = [(f'Overflow probability {capacity}', f'Pr[#<={smc_steps}]([] maxPacketsBuffered() < {capacity})') for capacity in range(max_capacity//10, max_capacity+1, max_capacity//10)]
-        formulas += [
-            ('Statistically no overflow', f'Pr[#<={smc_steps}]([] !gDidOverflow) >= {smc_probability}')
-        ]
+        formulas = [(f'Probability of no overflow, when buffer capacity is {max_capacity}', f'Pr[#<={smc_steps}]([] !gDidOverflow)')]
+
+        ## Other SMC queries, not used.
+        # subdivisions = 10 
+        # formulas += [(f'Overflow probability {capacity}', f'Pr[#<={smc_steps}]([] maxPacketsBuffered() < {capacity})') for capacity in range(max_capacity // subdivisions, max_capacity+1, max_capacity // subdivisions)]
+        # smc_probability = query_config.get('smc_probability', 0.5)
+        # formulas += [('Statistically no overflow', f'Pr[#<={smc_steps}]([] !gDidOverflow) >= {smc_probability}')]
         return write_file(model, formulas, ext_name=ext_name, enable_sampling=False)
     else:
         formulas = [
@@ -127,7 +129,7 @@ def write_verification_file(model: Model, config: dict, ext_name: str, statistic
         return write_file(model, formulas, ext_name=ext_name, enable_sampling=False)
 
 
-def write_file(model: Model, formulas: list[Tuple[str,str]], ext_name='libcustom.so', enable_sampling: bool = True) -> str:
+def write_file(model: Model, formulas: Sequence[Tuple[str,str]], ext_name='libcustom.so', enable_sampling: bool = True) -> str:
     uppaal_template = data_file_contents(MODEL_TEMPLATE)
     declarations = write_model_declarations(model, ext_name, enable_sampling = enable_sampling)
 
@@ -203,6 +205,10 @@ RE_SEGMENT_FORMULA_EXPR = re.compile(r'^ -- Formula: (.*)$', flags=re.MULTILINE)
 # Captures all simulated traces of subexpressions.
 RE_SEGMENT_EXPR_VALUES = re.compile(r'^(\w.+):$\n((^\[\d+\]: .*$\n)+)', flags=re.MULTILINE)
 RE_SEGMENT_VALUES = re.compile(r'^(\[\d+\]): (.*)$', flags=re.MULTILINE)
+RE_SMC_RESULT_EXPR = re.compile(r'^.*?Pr\(.*?\) in \[(.*?),(.*?)\] \((.*?)% CI\)$', flags=re.MULTILINE)
+
+## SMC hypothesis testing queries - not currently used.
+# RE_SMC_HYPOTHESIS_EXPR = re.compile(r'^.*?Pr\(.*?\) >= (.*)$\n^with confidence (.*)$', flags=re.MULTILINE)
 
 
 Expr = str
@@ -215,6 +221,8 @@ class UppaalSegment(NamedTuple):
     formula_expr: Optional[str]
     values: Mapping[Expr, Samples | None]
     index: int
+    interval: Tuple[float, float] | None = None
+    confidence: float | None = None
 
     @classmethod
     def from_file(cls, f):
@@ -225,9 +233,27 @@ class UppaalSegment(NamedTuple):
                 is_satisfied=s["is_satisfied"],
                 values=s["values"],
                 index=s["index"],
+                interval=s["interval"],
+                confidence=s["confidence"],
             )
             for s in jsegments
         ]
+
+def parse_smc_output(data: str, is_satisfied: bool|None, index: int, formula: str) -> UppaalSegment:
+    interval = None
+    confidence = None
+    # SMC probability estimation queries.
+    if match := RE_SMC_RESULT_EXPR.search(data):
+        interval = float(match.group(1)), float(match.group(2))
+        confidence = float(match.group(3)) / 100
+    ## SMC hypothesis testing queries - not currently used. (We should modify UppaalSegment - maybe making subclasses - if we want to use this).
+    # elif match := RE_SMC_HYPOTHESIS_EXPR.search(data):
+    #     interval = float(match.group(1)), 1.0
+    #     confidence_str = match.group(2)
+    #     if confidence_str[-1] == '.':
+    #         confidence_str = confidence_str[:-1]
+    #     confidence = float(confidence_str)
+    return UppaalSegment(is_satisfied, formula, dict(), index, interval, confidence)
 
 
 def parse_uppaal_segment(data: str, index: int) -> UppaalSegment:
@@ -245,6 +271,9 @@ def parse_uppaal_segment(data: str, index: int) -> UppaalSegment:
     formula_expr = None
     if match := RE_SEGMENT_FORMULA_EXPR.search(data):
         formula_expr = match.group(1)
+    
+    if isinstance(formula_expr, str) and formula_expr.startswith("Pr"):
+        return parse_smc_output(data, is_satisfied, index, formula_expr)
 
     # Match values
     values = collections.OrderedDict()

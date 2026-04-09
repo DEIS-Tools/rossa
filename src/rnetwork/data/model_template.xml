@@ -25,7 +25,7 @@
 			<source ref="id0"/>
 			<target ref="id0"/>
 			<label kind="guard" x="-1020" y="-722">t == 1</label>
-			<label kind="assignment" x="-1020" y="-748">simulatePhase()</label>
+			<label kind="assignment" x="-1020" y="-748">simulatePhase(), t = 0</label>
 			<nail x="-1054" y="-671"/>
 			<nail x="-884" y="-671"/>
 		</transition>

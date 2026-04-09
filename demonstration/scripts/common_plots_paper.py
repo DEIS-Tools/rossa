@@ -2,8 +2,9 @@ import json
 import math
 import sys
 from dataclasses import dataclass
-from typing import Sequence, Tuple, Iterable
+from typing import Sequence, Tuple, Iterable, Optional
 from collections.abc import Callable
+from pathlib import Path
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -17,6 +18,7 @@ from rnetwork.uppaal import Samples, UppaalSegment
 class InstanceData:
     name: str
     segments: Sequence[UppaalSegment]
+    never_overflows: Optional[bool]
 
 plot_settings = {
     'png': {'scale': 0.5, 'file': 'png', 'legend': True, 'fontsize': 10}, 
@@ -240,18 +242,19 @@ def average_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]],
     ax.set_ylim(ymin=0, auto=True)
     plot_from_data(fig, ax, average_port_utilization_data(name_segments), output_path, plot_setting)
 
-def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
+def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], verification_results: dict[str, Optional[bool]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
-    data = [(name, xs, ys) for (name, xs, ys) in maximum_latency_data(name_segments) if name in lines[1:]]
+    data = [(name, xs, ys) for (name, xs, ys) in maximum_latency_data(name_segments) if verification_results[name] is None or verification_results[name]]
     plot_from_data(fig, ax, data, output_path, plot_setting)
 
-def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
+def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], verification_results: dict[str, Optional[bool]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Average Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
-    plot_from_data(fig, ax, average_latency_data(name_segments), output_path, plot_setting, line_styles_bw)
+    data = [(name, xs, ys) for (name, xs, ys) in average_latency_data(name_segments) if verification_results[name] is None or verification_results[name]]
+    plot_from_data(fig, ax, data, output_path, plot_setting, line_styles_bw)
 
 def maximum_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Buffer Size of Nodes (Ascending)", xlabel="Nodes (sorted by max buffer size)", ylabel="Packets")
@@ -334,8 +337,9 @@ def plot(instance_datas: Sequence[InstanceData], output_folder, plotting, plot_s
     maximum_port_utilization([(inst.name, inst.segments[2]) for inst in instance_datas], output_folder / f"max_port_utilization.{file_suffix}", plot_setting = plot_setting)
     average_port_utilization([(inst.name, inst.segments[2]) for inst in instance_datas], output_folder / f"avg_port_utilization.{file_suffix}", plot_setting = plot_setting)
 
-    maximum_latency([(inst.name, inst.segments[1]) for inst in instance_datas], output_folder / f"max_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
-    average_latency([(inst.name, inst.segments[1]) for inst in instance_datas], output_folder / f"avg_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    verification_results = {inst.name: inst.never_overflows for inst in instance_datas}
+    maximum_latency([(inst.name, inst.segments[1]) for inst in instance_datas], verification_results, output_folder / f"max_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
+    average_latency([(inst.name, inst.segments[1]) for inst in instance_datas], verification_results, output_folder / f"avg_latencies.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
     
     maximum_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"max_buffer.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
     average_buffer([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"avg_buffer.{file_suffix}", plotting=plotting, plot_setting = plot_setting)
@@ -345,6 +349,25 @@ def plot(instance_datas: Sequence[InstanceData], output_folder, plotting, plot_s
     
     make_legend_to_file([(inst.name, inst.segments[0]) for inst in instance_datas], output_folder / f"legend.{file_suffix}", plot_setting = plot_setting)
 
+def report(instance_datas: Sequence[InstanceData], output_folder):
+    path = output_folder / "verification-report.txt"
+    with open(path, "w") as f:
+        f.write('Verification:\n')
+        for inst in instance_datas:
+            if inst.never_overflows is not None:
+                if inst.never_overflows:
+                    f.write(f'{inst.name}: Never overflows\n')
+                else:
+                    f.write(f'{inst.name}: Can eventually overflow\n')
+        f.write('\nSMC:\n')
+        for inst in instance_datas:
+            if inst.segments is not None:
+                f.write(f'{inst.name}:\n')
+                for segment in inst.segments:
+                    if segment.interval is not None and segment.confidence is not None:
+                        f.write(f'{segment.formula_expr} is in [{segment.interval[0]}, {segment.interval[1]}] with confidence {segment.confidence}\n')
+                    else:
+                        f.write(f'{segment.formula_expr} is {segment.is_satisfied}\n')    
 
 class CommonPlots(cli.Application):
     PROGNAME = colors.green
@@ -371,7 +394,8 @@ class CommonPlots(cli.Application):
 
         schedulers = [(c["folder_name"], self.base / c["folder_name"]) for c in data["instance"]]
         datas = []
-        for s, f in schedulers:
+        verification_data = []
+        for s, f in schedulers: 
             segments_path = f / "segments.json"
             self._out(segments_path)
             try:
@@ -379,14 +403,31 @@ class CommonPlots(cli.Application):
             except:
                 self._out(f"Error reading from {segments_path}", is_error=True)
                 continue
-            data = InstanceData(name=s, segments=segments)
+            never_overflows = self._check_verification(f)
+            data = InstanceData(name=s, segments=segments, never_overflows=never_overflows)
             datas.append(data)
+            smc_segments = self._check_smc(f)
+            verification_data.append(InstanceData(name=s, segments=smc_segments, never_overflows=never_overflows))
         plot(datas, output_folder=self.base, plotting=plotting, plot_setting=plot_setting)
+        report(verification_data, output_folder=self.base)
 
     def _read_segments(self, path):
         with open(path, "r") as f:
             segments = json.load(f)
-            return [UppaalSegment(s["is_satisfied"], s["formula_expr"], s["values"], s["index"]) for s in segments]
+            return [UppaalSegment(s["is_satisfied"], s["formula_expr"], s["values"], s["index"], s["interval"], s["confidence"]) for s in segments]
+
+    def _check_verification(self, folder) -> Optional[bool]:
+        verification_path = Path(folder / "segments-verification.json")
+        if verification_path.is_file():
+            segments = self._read_segments(verification_path)
+            assert(len(segments) == 1)
+            return segments[0].is_satisfied
+        return None
+    def _check_smc(self, folder) -> Optional[Sequence[UppaalSegment]]:
+        smc_path = Path(folder / "segments-smc.json")
+        if smc_path.is_file():
+            return self._read_segments(smc_path)
+        return None
 
     def _out(self, text, is_error=False):
         if not self.quiet:
