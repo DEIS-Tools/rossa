@@ -396,26 +396,32 @@ class CommonPlots(cli.Application):
         datas = []
         verification_data = []
         for s, f in schedulers: 
-            segments_path = f / "segments.json"
-            self._out(segments_path)
-            try:
-                segments = self._read_segments(segments_path)
-            except:
-                self._out(f"Error reading from {segments_path}", is_error=True)
-                continue
+            segments = self._check_simulation(f)
             never_overflows = self._check_verification(f)
-            data = InstanceData(name=s, segments=segments, never_overflows=never_overflows)
-            datas.append(data)
+            if segments is not None:
+                data = InstanceData(name=s, segments=segments, never_overflows=never_overflows)
+                datas.append(data)
             smc_segments = self._check_smc(f)
             verification_data.append(InstanceData(name=s, segments=smc_segments, never_overflows=never_overflows))
-        plot(datas, output_folder=self.base, plotting=plotting, plot_setting=plot_setting)
-        report(verification_data, output_folder=self.base)
+        if len(datas) > 0:
+            plot(datas, output_folder=self.base, plotting=plotting, plot_setting=plot_setting)
+        if len(verification_data) > 0:
+            report(verification_data, output_folder=self.base)
 
-    def _read_segments(self, path):
+    def _read_segments(self, path) -> Sequence[UppaalSegment]:
         with open(path, "r") as f:
             segments = json.load(f)
             return [UppaalSegment(s["is_satisfied"], s["formula_expr"], s["values"], s["index"], s["interval"], s["confidence"]) for s in segments]
 
+    def _check_simulation(self, folder) -> Optional[Sequence[UppaalSegment]]:
+        segments_path = folder / "segments.json"
+        if segments_path.is_file():
+            try:
+                return self._read_segments(segments_path)
+            except:
+                self._out(f"Error reading from {segments_path}", is_error=True)
+        return None
+            
     def _check_verification(self, folder) -> Optional[bool]:
         verification_path = Path(folder / "segments-verification.json")
         if verification_path.is_file():
