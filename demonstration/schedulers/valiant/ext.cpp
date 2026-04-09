@@ -15,12 +15,6 @@
 
 #include "temporal_graph.hpp"
 
-enum APPROACH { quickest, fewest_hops };
-struct Params {
-    APPROACH approach = quickest;
-};
-Params params{quickest};
-
 
 struct ChoiceArgs {
     int32_t phase;
@@ -42,7 +36,9 @@ struct std::hash<ChoiceArgs> {
     }
 };
 
-std::mt19937 random_gen;
+std::mt19937 random_gen = std::mt19937(0);
+// Random number for this whole simulation.
+uint32_t random_num_simulation;
 // Random number chosen for this simulation step.
 uint32_t random_num;
 
@@ -81,12 +77,8 @@ void computeToDestination(node_t destination) {
     std::vector<tg::Graph::vertex_descriptor> p(num_vertices(g));
     std::vector<int> d(num_vertices(g));
 
-    const auto approach = params.approach;
     auto wmap = make_transform_value_property_map(
-        [approach](const tg::TEdge &edge) {
-            if (approach == fewest_hops) {
-                return 10'000 * edge.hop + edge.time;
-            }
+        [](const tg::TEdge &edge) {
             return 10'000 * edge.time + edge.hop; 
         },
         get(edge_bundle, g));
@@ -107,8 +99,7 @@ void computeToDestination(node_t destination) {
             // Keep skipping phasenode until the hop.
             assert(!std::holds_alternative<tg::TPhaseNode>(g[next]));
             for (; std::holds_alternative<tg::TPhaseNode>(g[next]); next = p[next]) {
-                assert(false); // Since we changed the temporal graph this should not be
-                            // the case.
+                assert(false); // Since we changed the temporal graph this should not be the case.
             }
             if (const auto *pNext = std::get_if<tg::TPort>(&g[next])) {
                 port = pNext->port;
@@ -130,31 +121,29 @@ static ScheduleChoice cachedChoice(int32_t phase_i, int32_t from_node, node_t to
     return iter->second;
 }
 
-packet_t scheduler_choice(node_t node, flow_t flow, phase_t phase_i, switch_t sw) {
+packet_t scheduler_choice(node_t node, flow_t flow, phase_t phase, switch_t sw) {
     if (network.flows[flow].ingress == node) {
         // Random via point among immediately available nodes (send to a random switch).
-        const auto random_switch = static_cast<switch_t>(hash_bounded(((phase_i << 16) + flow) ^ random_num, network.topology.num_switches));
+        const auto random_switch = static_cast<switch_t>(hash_bounded(((phase << 16) + flow) ^ random_num, network.topology.num_switches));
         if (random_switch == sw) return 1;
     } else {
         // Quickest to egress
-        auto choice = cachedChoice(phase_i, node, network.flows[flow].egress);
-        if (phase_i == choice.phase && network.topology.port_of(node, sw) == choice.port) return 1;
+        auto choice = cachedChoice(phase, node, network.flows[flow].egress);
+        auto port = network.topology.port_of(node, sw);
+        if (phase == choice.phase && port == choice.port) return 1;
     }
     return 0;
 }
 
 
 void prepare_scheduler_choices() {
-    random_num = network.buffers.get_buffer_hash();  // UPPAAL requires deterministic functions, so we use buffers (input to the API function) to generate a hash to use as the random number.
-    // random_num = random_gen();
+    random_num = random_num_simulation ^ network.buffers.get_buffer_hash();  // UPPAAL requires deterministic functions, so we use buffers (input to the API function) to generate a hash to use as the random number.
 }
 
 void init_scheduler() {
     if (!tgGraph) {
-        // readEnvVars();
         tgGraph = std::make_unique<tg::TemporalGraph>(network.topology);
         pChoiceCache = std::make_unique<std::unordered_map<ChoiceArgs, ScheduleChoice>>();
-        // constructSolutions();
     }
-    // random_gen = std::mt19937(0);
+    random_num_simulation = random_gen();
 }
