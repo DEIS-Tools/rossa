@@ -8,6 +8,7 @@ librnd_choice.so
 instances/*/*
 !instances/*/instances.toml
 !instances/*/model_configuration.toml
+!instances/example/example-topology
 
 cmake-build-*/
 build/
