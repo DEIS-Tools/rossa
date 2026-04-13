@@ -1,0 +1,8 @@
+[plotting]
+packet_max = 6000
+latency_max = 20
+
+[[instance]]
+extension_name = "libvaliant.so"
+folder_name = "valiant_quickest"
+modes = ["smc"]

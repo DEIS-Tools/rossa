@@ -1,5 +1,6 @@
 [plotting]
 packet_max = 1050
+latency_max = 20
 
 [[instance]]
 extension_name = "libfixed.so"
