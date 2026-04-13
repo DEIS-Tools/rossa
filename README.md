@@ -22,7 +22,7 @@ pip install -e .
 
 ## Running
 
-Set the UPPAAL license key in the `UPPAAL_KEY` environment variable or pass it on the command line with the `--uppaal-key` flag.
+Set the [UPPAAL](https://uppaal.org/downloads) license key in the `UPPAAL_KEY` environment variable or pass it on the command line with the `--uppaal-key` flag.
 
 Just run `rossa --help` to see commands. Can run help on the subcommands too `rossa generate --help`.
 
