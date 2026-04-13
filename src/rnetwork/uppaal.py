@@ -114,7 +114,8 @@ def write_verification_file(model: Model, config: dict, ext_name: str, statistic
         query_config = config.get("query", dict())
         smc_steps = query_config.get('smc_steps', 50)
         max_capacity = max(n.capacity for n in model.nodes)
-        formulas = [(f'Probability of no overflow, when buffer capacity is {max_capacity}', f'Pr[#<={smc_steps}]([] !gDidOverflow)')]
+        formulas = [(f'Probability of overflow, when buffer capacity is {max_capacity}', f'Pr[#<={smc_steps}](<> gDidOverflow)')]
+        # formulas = [(f'Probability of no overflow, when buffer capacity is {max_capacity}', f'Pr[#<={smc_steps}]([] !gDidOverflow)')]
 
         ## Other SMC queries, not used.
         # subdivisions = 10 
