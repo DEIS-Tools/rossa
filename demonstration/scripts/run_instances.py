@@ -13,7 +13,7 @@ import tomli
 from plumbum import local
 import plumbum
 
-from rnetwork import cli, uppaal
+from rossa import cli, uppaal
 
 class Instance(NamedTuple):
     extension_name: str

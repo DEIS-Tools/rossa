@@ -14,8 +14,6 @@ popd
 # Copy .so files out
 BUILD_PATH=./schedulers/build
 cp $BUILD_PATH/fixed/libfixed.so .
-# cp $BUILD_PATH/rnd_choice/librnd_choice.so .
-# cp $BUILD_PATH/capacity/libcapacity.so .
 cp $BUILD_PATH/rotor_lb/librotor_lb.so .
 cp $BUILD_PATH/valiant/libvaliant.so .
 

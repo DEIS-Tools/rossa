@@ -3,10 +3,11 @@ requires = ["setuptools>=69.1.0", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rnetwork"
-version = "0.6.0"
+name = "rossa"
+version = "1.0.0"
 authors = [
   { name="Søren Enevoldsen", email="senevoldsen@cs.aau.dk" },
+  { name="Morten Schou", email="mksc@cs.aau.dk" },
 ]
 description = "A package for generating and plotting of simulated networks using optical rotor switches using UPPAAL"
 readme = "README.md"
@@ -24,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-rnetwork = "rnetwork.cli:RotorSwitchApp.run"
+rossa = "rossa.cli:RotorSwitchApp.run"
 
 [tool.black]
 line-length = 119

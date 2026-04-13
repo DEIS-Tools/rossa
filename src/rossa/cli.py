@@ -229,7 +229,7 @@ class OutputMixin:
 
 class RotorSwitchApp(cli.Application):
     PROGNAME = colors.green
-    VERSION = colors.blue | "0.0.1"
+    VERSION = colors.blue | "1.0.0"
 
 
 def write_file_with_mkdir(content: str, file):

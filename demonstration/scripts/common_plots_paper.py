@@ -12,7 +12,7 @@ import tomli
 
 from plumbum import FG, cli, colors, local
 
-from rnetwork.uppaal import Samples, UppaalSegment
+from rossa.uppaal import Samples, UppaalSegment
 
 @dataclass
 class InstanceData:

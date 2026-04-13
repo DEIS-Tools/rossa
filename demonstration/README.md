@@ -1,8 +1,8 @@
-This folder demonstrates the use of the rnetwork package and some example schedulers.
+This folder demonstrates the use of the rossa package and some example schedulers.
 
 The schedulers have their own README inside the `schedulers` folder. Important to note that the schedulers are parameterized via environment variables!
 
-- It will basically setup a Python virtual environment to install the `rnetwork` (located in the directory above) package into.
+- It will basically setup a Python virtual environment to install the `rossa` (located in the directory above) package into.
 - Compile the example schedulers.
 - Inside the `instances` folder are subfolders each with `instances.toml` and `model_configuration.toml`.
     - Model configuration determines the parameters of the rotor network, such as number of nodes, bandwidth, buffer capacity, how many flows and their distribution, the queries to be run.
@@ -24,11 +24,11 @@ The following programs must be on the PATH (`python3`, `verifyta`, `cmake`)
 
 - Python 3.8+
 - UPPAAL Stratego 5+ . 
-- CMake 3.19.1+ and C++ 17 compiler
+- CMake 3.19.1+ and C++ 17 compiler (C++23 compiler for building the RotorLB scheduling code)
 
 # Setup
 
-The `setup.sh` script will create a virtual environment and install the Python package 'rnetwork' into.
+The `setup.sh` script will create a virtual environment and install the Python package 'rossa' into.
 
 # Running UPPAAL and Generating Plots.
 
@@ -39,8 +39,8 @@ The script `run_and_generate_plots.sh` will:
 1. Build the schedulers
 2. Load the Python virtual environment.
 3. Will generate UPPAAL models based on the model configuration inside the case_study folders.
-4. Run UPPAAL (the command line tool `verifyta`) to run queries for `paper_1` and `paper_2` inside the `demonstration` folder.
-5. Generate individual plots (inside each scheduler folder), and combined overview plots of latency and port utilizations in the main subfolder.
+4. Run UPPAAL (the command line tool `verifyta`) to run queries for the small `example`, `experiment_1`, and `experiment_2` inside the `demonstration` folder, as well as additional SMC experiments.
+5. Generate individual plots (inside each scheduler folder), and combined overview plots of buffer size, latency, and port utilizations in the main subfolder.
 
 Example:
 
