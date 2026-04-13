@@ -26,11 +26,7 @@ Set the UPPAAL license key in the `UPPAAL_KEY` environment variable or pass it o
 
 Just run `rossa --help` to see commands. Can run help on the subcommands too `rossa generate --help`.
 
-To generate example file: 
-
-```console
-rossa generate -c example/config_sampling.toml --model-type=sampling -o my-uppaal-file.xml --ext-name=libmyextension.so
-```
+See the demonstration folder for examples of using rossa.
 
 ## Building
 
