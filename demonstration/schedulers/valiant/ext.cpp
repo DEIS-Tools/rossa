@@ -36,7 +36,7 @@ struct std::hash<ChoiceArgs> {
     }
 };
 
-std::mt19937 random_gen = std::mt19937(0);
+std::mt19937 random_gen = std::mt19937(std::random_device{}());
 // Random number for this whole simulation.
 uint32_t random_num_simulation;
 // Random number chosen for this simulation step.
