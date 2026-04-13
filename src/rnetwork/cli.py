@@ -313,7 +313,7 @@ class RotorGenerate(cli.Application, OutputMixin):
 
         # Add topology based on switches
         model.topology = topo_builder.get_topology(model)
-        if topo_builder is not FileTopologyBuilder and "topology_file" in self.config["topology"]:
+        if topo_builder is not FileTopologyBuilder and "topology_file" in self.config["topology"] and not os.path.isfile(self.config["topology"]["topology_file"]):
             with open(self.config["topology"]["topology_file"], "w") as file:
                 json.dump(model.to_json_file_format(), file)
 
@@ -321,7 +321,7 @@ class RotorGenerate(cli.Application, OutputMixin):
         flows = flow_builder.make_flows(model, random=random)
         model.add_flows(flows)
         # Write flows to file, if traffic_file is specified, but it was not yet created.
-        if flow_builder is not FileFlowBuilder and "traffic_file" in self.config["flow"]:
+        if flow_builder is not FileFlowBuilder and "traffic_file" in self.config["flow"] and not os.path.isfile(self.config["flow"]["traffic_file"]):
             with open(self.config["flow"]["traffic_file"], "w") as file:
                 for flow in flows:
                     file.writelines(f'{flow.ingress.index};{flow.egress.index};' + ','.join(str(amount) for amount in flow.amount_over_time) + '\n')
