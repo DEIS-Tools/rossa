@@ -1,0 +1,35 @@
+[random]
+seed = 0
+
+[model]
+num_nodes = 16
+num_switches = 4
+bandwidth = 550
+capacity = 6000
+
+[flow]
+# Use the file if it exists
+traffic_file = "generated-traffic-demands"
+# Otherwise, generate traffic using these parameters, then write it to the file
+type = "gravity"
+min_demand = 1
+max_demand = 300
+generate_steps = 500
+sampling_demand_variance_percent=20
+connection_percentage = 25
+power = 1.0  # flow_demand = send_mass(m1)^power * recv_mass(m2)^power
+
+[topology]
+type = "rotornet2024"
+
+[schedule]
+reschedule = false
+
+[query]
+sim_steps = 500  # Number of simulation steps for simulation queries.
+sampling_steps = 300 # Number of simulation steps for the packet sampling queries.
+sampling_count = 50 # Number of samples taken for the packet sampling queries.
+smc_steps = 5000
+query_sim_packets_at_node = true
+query_sim_sampled_latency = true
+query_sim_port_utilization = true

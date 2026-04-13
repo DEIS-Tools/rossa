@@ -1,84 +1,119 @@
 #include "ext.hpp"
 
+#include <cassert>
 #include <algorithm>
-#include <cstdint>
 #include <vector>
 
 Network network;
 
-void Buffers::pushBuffers(phase_t phase, port_t port, packet_t *data) {
-    const size_t start = phase * ports_ * flows_ + port * flows_;
-    std::copy(data, data + flows_, &values_[start]);
+int32_t Buffers::operator()(node_t node, flow_t flow) const {
+    return values_[node * flows_ + flow];
 }
 
-void extBasicParams(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_ports) {
-    network.parameters = Parameters{num_phases, num_nodes, num_flows, num_ports};
-    network.parameters.resizeLimits();
-    network.flows.resize(num_flows);
-    network.buffers = Buffers(num_phases, num_ports, num_flows);
-
-    network.topology.num_phases = num_phases;
-    network.topology.num_ports = num_ports;
-    network.topology.num_nodes = num_nodes;
-    network.topology.resizeLimits();
+void Buffers::pushBuffers(node_t node, const packet_t *data) {
+    const size_t start = node * flows_;
+    std::copy_n(data, flows_, &values_[start]);
+}
+void Buffers::pushAllBuffers(const packet_t *data) {
+    std::copy_n(data, nodes_ * flows_, &values_[0]);
 }
 
-void extBegin() {
-    network.buffers.fill(0);
-    customBegin();
+void Buffers::fill(const packet_t value) {
+    std::fill(values_.begin(), values_.end(), value);
 }
 
-void extSetup() {
-    customSetup();
-}
-
-void extPrepareChoices() {
-    customPrepareChoices();
-}
-
-void extGetScheduleChoice(phase_t phase_i, node_t node, flow_t flow, phase_t &choice_phase, port_t &choice_port) {
-    customGetScheduleChoice(phase_i, node, flow, choice_phase, choice_port);
-}
-
-void extPortCapacities(packet_t *data) {
-    auto &p = network.parameters;
-    for (int32_t i = 0; i < p.num_ports; ++i) {
-        p.capacities[i] = data[i];
+uint32_t Buffers::get_buffer_hash() const {
+    uint32_t seed = values_.size();
+    for(const auto y : values_) {
+        auto x = static_cast<uint32_t>(y);
+        x = ((x >> 16) ^ x) * 0x45d9f3b;
+        x = ((x >> 16) ^ x) * 0x45d9f3b;
+        x = (x >> 16) ^ x;
+        seed ^= x + 0x9e3779b9 + (seed << 6) + (seed >> 2);
     }
-}
-void extPortBandwidths(packet_t *data) {
-    auto &p = network.parameters;
-    for (int32_t i = 0; i < p.num_ports; ++i) {
-        p.bandwidths[i] = data[i];
-    }
+    return seed;
 }
 
-void extPushFlow(int32_t i, node_t ingress, node_t egress, packet_t amount) {
-    auto &flows = network.flows;
-    flows[i] = Flow{ingress, egress, amount};
+node_t Topology::operator()(phase_t phase, port_t port) const {
+    return topology[phase * num_ports() + port];
 }
 
-void extPushPortOwners(node_t *owners) {
-    network.topology.pushOwners(owners);
-}
-
-void extPushTopology(phase_t phase_i, node_t *targets) {
-    network.topology.pushTopology(phase_i, targets);
-}
-
-int32_t extGetPacketsInNetwork() {
-    int32_t sum = 0;
-    const auto &params = network.parameters;
-    for (phase_t phase = 0; phase < params.num_phases; ++phase) {
-        for (port_t port = 0; port < params.num_ports; ++port) {
-            for (flow_t flow = 0; flow < params.num_flows; ++flow) {
-                sum += network.buffers(phase, port, flow);
+port_t Topology::next_port_to(node_t src_node, node_t dst_node, phase_t current_phase) const {
+    for (phase_t offset = 0; offset < num_phases; offset++) {
+        phase_t phase = (current_phase + offset) % num_phases;
+        for (switch_t sw = 0; sw < num_switches; sw++) {
+            port_t port = port_of(src_node, sw);
+            if ((*this)(phase, port) == dst_node) {
+                return port;
             }
         }
     }
-    return sum;
+    assert(false);
+    return -1;
+}
+phase_t Topology::phase_offset_next_connection(node_t src_node, node_t dst_node, phase_t current_phase) const {
+    for (phase_t offset = 1; offset <= num_phases; offset++) {
+        phase_t phase = (current_phase + offset) % num_phases;
+        for (switch_t sw = 0; sw < num_switches; sw++) {
+            port_t port = port_of(src_node, sw);
+            if ((*this)(phase, port) == dst_node) {
+                return offset;
+            }
+        }
+    }
+    assert(false);
+    return -1;
 }
 
-void extPushBuffers(int32_t phase, port_t port, node_t *data) {
-    network.buffers.pushBuffers(phase, port, data);
+void Topology::pushTopology(phase_t phase, const node_t* const targets) {
+    std::copy(targets, targets + num_ports(), &topology[phase * num_ports()]);
+}
+
+void Topology::resizeLimits() {
+    capacities.resize(num_nodes);
+    bandwidths.resize(num_ports());
+    topology.clear();
+    topology.resize(num_phases * num_ports());
+}
+
+void extPushNetwork(int32_t num_phases, int32_t num_nodes, int32_t num_flows, int32_t num_switches,
+                    const packet_t* node_capacities, const packet_t* port_bandwidth) {
+    network.topology = Topology(num_phases, num_nodes, num_switches);
+    network.topology.resizeLimits();
+    network.flows.resize(num_flows);
+    network.buffers = Buffers(num_nodes, num_flows);
+
+    for (node_t node = 0; node < num_nodes; ++node) {
+        network.topology.capacities[node] = node_capacities[node];
+    }
+    for (port_t port = 0; port < network.topology.num_ports(); ++port) {
+        network.topology.bandwidths[port] = port_bandwidth[port];
+    }
+}
+
+void extPushTopology(phase_t phase, const node_t* targets) {
+    network.topology.pushTopology(phase, targets);
+}
+
+void extSchedulerInit() {
+    network.buffers.fill(0);
+    init_scheduler();
+}
+
+void extPushFlow(flow_t flow, node_t ingress, node_t egress) {
+    network.flows[flow] = Flow{ingress, egress};
+}
+
+void extGetScheduleChoiceAll(phase_t phase, const packet_t* buffer_data, int32_t* schedule_choice_output) {
+    network.buffers.pushAllBuffers(buffer_data);
+    prepare_scheduler_choices();
+    int i = 0;
+    for (node_t node = 0; node < network.topology.num_nodes; ++node) {
+        for (flow_t flow = 0; flow < network.num_flows(); ++flow) {
+            for (int sw = -1; sw < network.topology.num_switches; ++sw) {
+                schedule_choice_output[i] = scheduler_choice(node, flow, phase, sw);
+                i++;
+            }
+        }
+    }
 }

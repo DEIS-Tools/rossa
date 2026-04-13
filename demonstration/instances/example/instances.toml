@@ -1,0 +1,10 @@
+[plotting]
+packet_max = 1050
+latency_max = 20
+
+[[instance]]
+extension_name = "libfixed.so"
+folder_name = "fixed_quickest"
+modes = ["simulation", "verification"]
+[instance.envs]
+CHOICE_APPROACH = "QUICKEST"

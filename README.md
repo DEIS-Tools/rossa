@@ -24,13 +24,9 @@ pip install -e .
 
 Set the UPPAAL license key in the `UPPAAL_KEY` environment variable or pass it on the command line with the `--uppaal-key` flag.
 
-Just run `rnetwork --help` to see commands. Can run help on the subcommands too `rnetwork generate --help`.
+Just run `rossa --help` to see commands. Can run help on the subcommands too `rossa generate --help`.
 
-To generate example file: 
-
-```console
-rnetwork generate -c example/config_sampling.toml --model-type=sampling -o my-uppaal-file.xml --ext-name=libmyextension.so
-```
+See the demonstration folder for examples of using rossa.
 
 ## Building
 
@@ -44,7 +40,7 @@ Run `python -m build`. Will place build outputs, both the source directory, and 
 
 After the configuration file for model generation is read there are possible overwrites controlled by the parameters `--si` (set integer), `--sb` (set boolean), `--ss` (set string). Be sure to specify the key proper of overriding, e.g. `--si model.num_nodes=12`.
 
-The `--model-type` parameter is important. The choice determines which templates inside `src/rnetwork/data` will be used. These templates contain `<<PLACEHOLDERS>>` that have their content replaced by the model generation. For example the capacity of the ports are embedded thus:
+The `--mode` parameter is important. The choice determines which queries are generated as well as some parameters for the templates inside `src/rossa/data`. These templates contain `<<PLACEHOLDERS>>` that have their content replaced by the model generation. For example the capacity of the ports are embedded thus:
 
 ```c
 const packet_t PORT_CAPACITIES[port_t] = <<GEN_PORT_CAPACITIES>>;

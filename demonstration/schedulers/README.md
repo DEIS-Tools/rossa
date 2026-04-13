@@ -39,11 +39,9 @@ The extensions will be in the appropriate subfolder inside `build`, eg. `build/f
 
 Folder: ext
 
-In the `ext` folder is the definition of interface used by the model to communicate with the scheduler. Schedulers must only implement the functions prefixed with `custom`. 
+In the `ext` folder is the definition of interface used by the model to communicate with the scheduler. Schedulers must implement the three functions `init_scheduler`, `prepare_scheduler_choices`, and `scheduler_choice`. 
 
-Schedulers can make use of the global `network` object and the `parameters`, `flows` and `topology` fields. It should not read the `buffers` field directly since that is considered hidden information from the scheduler. It may; however, use the `PortLoad::getLoad` and `PortLoad::getTotalPortLoad`.
-
-Care should be taken to ensure wrapping and avoid overflow. As an example, the output parameter `choice_phase` for `customGetScheduleChoice` should always be in a future phase since using the current passed `phase_i` would mean the package would wait an entire cycle. But be sure to value is `0 <= choice_phase < NUM_PHASES`.
+Schedulers can make use of the global `network` object and the `topology`, `flows` and `buffers` fields. 
 
 # Schedule Types
 
@@ -51,44 +49,24 @@ Some of the schedule types listed here makes use of the files in the `tgraph` fo
 
 ## Environment Variables
 
-The schedulers have internal settings that are configured via environment variables. They must be set before starting UPPAAL (or verifyta) such that they are in the defined inside process when the shared library is loaded.
+The schedulers have internal settings that are configured via environment variables. They must be set before starting UPPAAL (or verifyta) such that they are defined inside the process when the shared library is loaded.
 
 ## Fixed schedule
 
 Folder: fixed
 
-Quickest: Considering the topology of each phase, then for each flow compute paths from ingress to egress minimize number of phase shifts (simulation steps). occuring.
-Fewest hops: Same considerations as above, but minimize number of hops (number of switches passed through)
+- Quickest: Considering the topology of each phase, then for each flow compute paths from ingress to egress minimize number of phase shifts (simulation steps) occurring.
+- Fewest hops: Same considerations as above, but minimize number of hops (number of switches passed through).
 
-## Capacity Consideration
+## Valiant
 
-Folder: capacity
+Folder: valiant
 
-Will compute shortest paths to each egress node for all ports. Then select K (1 < K <= 5 typically) neighbours based on the most optimal paths. During simulation will then take into account the current load: if the load is greater than some treshold it will change direct packets to the next-preferred port.
+Choose a random output port on the first hop, then uses fixed quickest routing to the egress.
 
-The following environment variables, with their defaults shown, are used to set K, the treshold and overall approach.
+## RotorLB
 
-```
-CAPACITY_NUM_PATHS=2
-CAPACITY_APPROACH=QUICKEST
-CAPACITY_TRESHOLD=0.7
-```
+Folder: rotor_lb
 
-Two variants based on optimizing for number simulation steps (QUICKEST) or number of hops (FEWEST_HOPS).
-
-Requires number of switches in the work >= K.
-
-## Random Fixed Choice
-
-Folder: rnd_choice
-
-Combination of fixed and capacity but with no load consideration. Constructs the optimal paths and select best K paths using unique ports and then randomly select among them during each step of the simulation.
-
-The following environment variables, with their defaults shown, are used to set K and overall approach.
-
-```
-CAPACITY_NUM_PATHS=2
-CAPACITY_APPROACH=QUICKEST
-```
-
-Two variants based on optimizing for number simulation steps or number of hops.
+- Uniform: Implements the RotorLB algorithm from (Mellette, 2017: RotorNet). This looks at the current buffer sizes.
+- Quickest: This option implements our variant of RotorLB (which we call RotorLB*), where multiple accepted offers are prioritized by quickest path to egress.

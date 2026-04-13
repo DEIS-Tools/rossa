@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.19.1)
 
+cmake_policy(SET CMP0167 NEW)
 find_package(Boost 1.83 REQUIRED)
 
 add_library(tgraph OBJECT temporal_graph.cpp)
