@@ -9,7 +9,7 @@ capacity = 1000
 
 [flow]
 # Use the file if it exists
-traffic_file="instances/example/example-uniform-flows"
+traffic_file="instances/example/example-uniform-flows.csv"
 # Otherwise, generate traffic using these parameters, then write it to the file
 type = "uniform"
 min_demand = 1
@@ -17,7 +17,7 @@ max_demand = 50
 num_flows = 8
 
 [topology]
-topology_file="instances/example/example-topology"
+topology_file="instances/example/example-topology.json"
 
 [query]
 sim_steps = 500         # Number of simulation steps for simulation queries.

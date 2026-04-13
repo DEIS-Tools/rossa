@@ -4,7 +4,7 @@ venv
 instances/*/*
 !instances/*/instances.toml
 !instances/*/model_configuration.toml
-!instances/example/example-topology
+!instances/example/example-topology.json
 
 cmake-build-*/
 build/
