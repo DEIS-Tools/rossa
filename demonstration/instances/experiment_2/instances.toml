@@ -1,6 +1,7 @@
 [plotting]
 packet_max = 5000
 latency_max = 20
+latency_avg = 8
 
 
 [[instance]]

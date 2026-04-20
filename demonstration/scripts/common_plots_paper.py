@@ -235,12 +235,12 @@ def restrict_to_lines(data: PlotData, lines: Sequence[str]) -> PlotData:
 def maximum_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Port Utilization", xlabel="Phase", ylabel="Utilization")
     ax.set_ylim(ymin=0.0, auto=True)
-    plot_from_data(fig, ax, maximum_port_utilization_data(name_segments), output_path, plot_setting)
+    plot_from_data(fig, ax, maximum_port_utilization_data(name_segments), output_path, plot_setting, linewidth=1, alpha=0.8)
 
 def average_port_utilization(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plot_setting):
     fig, ax = plot_common(plot_setting, title="Average Port Utilization", xlabel="Phase", ylabel="Utilization")
     ax.set_ylim(ymin=0, auto=True)
-    plot_from_data(fig, ax, average_port_utilization_data(name_segments), output_path, plot_setting)
+    plot_from_data(fig, ax, average_port_utilization_data(name_segments), output_path, plot_setting, linewidth=1, alpha=0.8)
 
 def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], verification_results: dict[str, Optional[bool]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
@@ -252,21 +252,26 @@ def maximum_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], verifica
 def average_latency(name_segments: Sequence[Tuple[str, UppaalSegment]], verification_results: dict[str, Optional[bool]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Average Latency of Flows (Ascending)", xlabel="Flow (sorted by latency)", ylabel="Time units")
     ax.set_xticks(range(0, 1000, 5))
-    ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
+    if 'latency_avg' in plotting:
+        ax.set_ylim(ymin=0.0, ymax=plotting['latency_avg'])
+    elif 'latency_max' in plotting:
+        ax.set_ylim(ymin=0.0, ymax=plotting['latency_max'])
+    else:
+        ax.set_ylim(ymin=0.0)
     data = [(name, xs, ys) for (name, xs, ys) in average_latency_data(name_segments) if verification_results[name] is None or verification_results[name]]
-    plot_from_data(fig, ax, data, output_path, plot_setting, line_styles_bw)
+    plot_from_data(fig, ax, data, output_path, plot_setting)  # , line_styles_bw
 
 def maximum_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Buffer Size of Nodes (Ascending)", xlabel="Nodes (sorted by max buffer size)", ylabel="Packets")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max'])
-    plot_from_data(fig, ax, maximum_buffer_data(name_segments), output_path, plot_setting, line_styles_bw, linewidth=1, alpha=0.8)
+    plot_from_data(fig, ax, maximum_buffer_data(name_segments), output_path, plot_setting, alpha=0.8)  # , line_styles_bw, linewidth=1
 
 def average_buffer(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Average Buffer Size of Nodes (Ascending)", xlabel="Nodes (sorted by avg buffer size)", ylabel="Packets")
     ax.set_xticks(range(0, 1000, 5))
     ax.set_ylim(ymin=0.0, ymax=plotting['packet_max'])
-    plot_from_data(fig, ax, average_buffer_data(name_segments), output_path, plot_setting, line_styles_bw, linewidth=1, alpha=0.8)
+    plot_from_data(fig, ax, average_buffer_data(name_segments), output_path, plot_setting, alpha=0.8)  # , line_styles_bw, linewidth=1
 
 def maximum_buffer_over_time(name_segments: Sequence[Tuple[str, UppaalSegment]], output_path, plotting, plot_setting):
     fig, ax = plot_common(plot_setting, title="Maximum Node Buffer Size over time", xlabel="Phase", ylabel="Packets")
